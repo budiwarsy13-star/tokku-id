@@ -162,6 +162,7 @@ function CheckoutModal({ product, store, accent, onClose }) {
   const [alamatResults, setAlamatResults] = useState([]);
   const [searchingAlamat, setSearchingAlamat] = useState(false);
   const [destinasi, setDestinasi] = useState(null);
+  const [alamatLengkap, setAlamatLengkap] = useState("");
   const [ongkirOptions, setOngkirOptions] = useState([]);
   const [loadingOngkir, setLoadingOngkir] = useState(false);
   const [selectedOngkir, setSelectedOngkir] = useState(null);
@@ -203,6 +204,7 @@ function CheckoutModal({ product, store, accent, onClose }) {
   async function handleSubmit(e) {
     e.preventDefault();
     if (!destinasi) return alert("Pilih dulu alamat tujuan pengiriman.");
+    if (!alamatLengkap.trim()) return alert("Isi dulu alamat lengkap (jalan, nomor rumah, dll).");
     if (!selectedOngkir) return alert("Pilih dulu kurir pengiriman.");
     setSaving(true);
 
@@ -219,6 +221,7 @@ function CheckoutModal({ product, store, accent, onClose }) {
         status: "pending",
         destination_id: String(destinasi.id),
         destination_label: destinasi.label,
+        full_address: alamatLengkap,
         shipping_cost: selectedOngkir.cost,
         courier: `${selectedOngkir.name} - ${selectedOngkir.service}`,
         midtrans_order_id: orderId,
@@ -384,6 +387,27 @@ function CheckoutModal({ product, store, accent, onClose }) {
                 </>
               )}
             </div>
+
+            {destinasi && (
+              <div>
+                <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">
+                  Alamat lengkap
+                </label>
+                <textarea
+                  required
+                  value={alamatLengkap}
+                  onChange={(e) => setAlamatLengkap(e.target.value)}
+                  rows={3}
+                  placeholder="Nama jalan, nomor rumah, RT/RW, patokan (misal: dekat minimarket, warna pagar rumah, dll)"
+                  className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none resize-none"
+                  onFocus={(e) => e.target.style.borderColor = accent}
+                  onBlur={(e) => e.target.style.borderColor = "#E5E2D9"}
+                />
+                <p className="text-xs text-[#8B8D85] mt-1">
+                  Detail ini penting biar kurir gak salah antar paket kamu.
+                </p>
+              </div>
+            )}
 
             {destinasi && (
               <div>

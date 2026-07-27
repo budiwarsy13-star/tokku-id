@@ -100,6 +100,10 @@ export default function PesananPage() {
                       {o.buyer_name}
                       <br />
                       <span className="text-xs text-[#8B8D85]">{o.buyer_phone}</span>
+                      <br />
+                      <span className="text-xs text-[#8B8D85]">
+                        {o.full_address}, {o.destination_label}
+                      </span>
                     </td>
                     <td className="px-4 py-3 text-[#5B6472]">{o.quantity}</td>
                     <td className="px-4 py-3 font-medium text-[#1C1C1A]">
