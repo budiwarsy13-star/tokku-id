@@ -25,11 +25,30 @@ export default function Masuk() {
     setLoading(true);
     setMessage("");
     const { error } = await supabase.auth.signInWithPassword({ email, password });
-    setLoading(false);
+
     if (error) {
+      setLoading(false);
       setMessage(error.message.includes("Invalid") ? "Email atau password salah." : error.message);
-    } else {
+      return;
+    }
+
+    // Pastiin sesi beneran udah kesimpen sebelum redirect (fix khusus buat Safari iOS)
+    let sesiSiap = false;
+    for (let i = 0; i < 10; i++) {
+      const { data } = await supabase.auth.getSession();
+      if (data.session) {
+        sesiSiap = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 150));
+    }
+
+    setLoading(false);
+
+    if (sesiSiap) {
       window.location.href = "/dashboard";
+    } else {
+      setMessage("Login berhasil tapi ada kendala teknis, coba refresh halaman.");
     }
   }
 
