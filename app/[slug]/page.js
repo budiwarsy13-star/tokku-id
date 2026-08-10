@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { buatNotifikasi } from "@/lib/notifications";
 import { ShoppingCart, X, Search, Truck } from "lucide-react";
 
 export default function TokoPublik() {
@@ -168,6 +169,7 @@ function CheckoutModal({ product, store, accent, onClose }) {
   const [selectedOngkir, setSelectedOngkir] = useState(null);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [paymentStatus, setPaymentStatus] = useState(null); // "paid" | "pending"
 
   const unitPrice = selectedVariant ? selectedVariant.price : product.price;
   const subtotal = unitPrice * quantity;
@@ -231,6 +233,13 @@ const { error: orderError } = await supabase
 
 if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + orderError.message); }
 
+    await buatNotifikasi(supabase, {
+      storeId: store.id,
+      type: "order_masuk",
+      title: "Pesanan baru masuk",
+      message: `${buyerName} memesan ${productName}. Menunggu pembayaran.`,
+    });
+
     const payRes = await fetch("/api/payment", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -254,12 +263,15 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
     window.snap.pay(payData.token, {
       onSuccess: async () => {
         await supabase.from("orders").update({ status: "paid" }).eq("midtrans_order_id", orderId);
+        setPaymentStatus("paid");
         setSuccess(true);
       },
-      onPending: () => setSuccess(true),
-      onError: () => alert("Pembayaran gagal. Silakan coba lagi."),
-      onClose: () => {},
-    });
+      onPending: () => {
+    setPaymentStatus("pending");
+    setSuccess(true);
+    },
+    onError: () => alert("Pembayaran gagal. Silakan coba lagi."),
+    onClose: () => {},
   }
 
   return (
@@ -277,7 +289,12 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
               <ShoppingCart size={24} style={{ color: accent }} />
             </div>
             <p className="text-sm text-[#5B6472] mb-1">Terima kasih, {buyerName}!</p>
-            <p className="text-sm text-[#8B8D85] mb-6">Pembayaran berhasil. Pesananmu udah masuk ke toko.</p>
+            <p className="text-sm text-[#8B8D85] mb-6">
+              {paymentStatus === "paid"}
+              ? "Pembayaran kamu sudah berhasil. Pesananmu udah masuk ke toko."
+              : "Pesananmu tercatat! Selesaikan pembayaran sesuai instruksi, status bakal otomatis berubah begitu pembayaran dikonfirmasi."}
+            </p>
+          
             <button onClick={onClose}
               className="w-full py-3 text-white rounded-lg font-medium transition-colors"
               style={{ background: accent }}>

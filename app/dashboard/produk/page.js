@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import NotificationBell from "@/components/NotificationBell";
 import { LayoutDashboard, Package, ShoppingBag, Store, LogOut } from "lucide-react";
 
 export default function ProdukPage() {
@@ -66,10 +67,13 @@ export default function ProdukPage() {
       <div className="flex-1 ml-60 p-8">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-[#1C1C1A]">Produk</h1>
-          <a href="/dashboard/tambah-produk"
-            className="text-sm bg-[#D85A30] text-white px-4 py-2 rounded-lg hover:bg-[#B84A25] transition-colors">
-            + Tambah produk
-          </a>
+          <div className="flex items-center gap-3">
+            <a href="/dashboard/tambah-produk"
+              className="text-sm bg-[#D85A30] text-white px-4 py-2 rounded-lg hover:bg-[#B84A25] transition-colors">
+              + Tambah produk
+            </a>
+            <NotificationBell storeId={store.id} />
+          </div>
         </div>
 
         <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">

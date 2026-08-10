@@ -36,10 +36,28 @@ export async function POST(request) {
     }
 
     if (newStatus) {
-      await supabaseAdmin
+      const updateData = { status: newStatus };
+      if (newStatus === "paid") updateData.paid_at = new Date().toISOString();
+
+      const { data: updatedOrder } = await supabaseAdmin
         .from("orders")
-        .update({ status: newStatus })
-        .eq("midtrans_order_id", order_id);
+        .update(updateData)
+        .eq("midtrans_order_id", order_id)
+        .select()
+        .maybeSingle();
+
+      // Notifikasi "pembayaran masuk" — ini yang dimaksud notifikasi langsung
+      // dari payment gateway, karena webhook Midtrans ini server-to-server,
+      // gak lewat browser pembeli sama sekali.
+      if (newStatus === "paid" && updatedOrder) {
+        await supabaseAdmin.from("notifications").insert({
+          store_id: updatedOrder.store_id,
+          order_id: updatedOrder.id,
+          type: "pembayaran_masuk",
+          title: "Pembayaran diterima",
+          message: `Pembayaran untuk ${updatedOrder.product_name} sebesar Rp${Number(updatedOrder.total_price).toLocaleString("id-ID")} sudah masuk.`,
+        });
+      }
     }
 
     return Response.json({ message: "OK" });

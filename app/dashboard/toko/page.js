@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import NotificationBell from "@/components/NotificationBell";
 import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Search, Upload, Palette, Eye } from "lucide-react";
 
 export default function PengaturanToko() {
@@ -140,10 +141,13 @@ export default function PengaturanToko() {
       <div className="flex-1 ml-60 p-8 max-w-2xl">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-[#1C1C1A]">Pengaturan toko</h1>
-          <a href={`/${store.slug}`} target="_blank"
-            className="flex items-center gap-2 text-sm text-[#D85A30] hover:underline">
-            <Eye size={15} /> Lihat toko
-          </a>
+          <div className="flex items-center gap-3">
+            <a href={`/${store.slug}`} target="_blank"
+              className="flex items-center gap-2 text-sm text-[#D85A30] hover:underline">
+              <Eye size={15} /> Lihat toko
+            </a>
+            <NotificationBell storeId={store.id} />
+          </div>
         </div>
 
         {savedMsg && (

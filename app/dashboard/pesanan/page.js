@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import { buatNotifikasi } from "@/lib/notifications";
+import NotificationBell from "@/components/NotificationBell";
 import { LayoutDashboard, Package, ShoppingBag, Store, LogOut } from "lucide-react";
 
 const STATUS_LABEL = {
@@ -33,8 +35,31 @@ export default function PesananPage() {
   }, []);
 
   async function updateStatus(orderId, newStatus) {
-    await supabase.from("orders").update({ status: newStatus }).eq("id", orderId);
-    setOrders(orders.map((o) => (o.id === orderId ? { ...o, status: newStatus } : o)));
+    const order = orders.find((o) => o.id === orderId);
+    const updateData = { status: newStatus };
+    if (newStatus === "shipped") updateData.shipped_at = new Date().toISOString();
+    if (newStatus === "selesai") updateData.completed_at = new Date().toISOString();
+
+    await supabase.from("orders").update(updateData).eq("id", orderId);
+    setOrders(orders.map((o) => (o.id === orderId ? { ...o, ...updateData } : o)));
+
+    if (newStatus === "shipped") {
+      await buatNotifikasi(supabase, {
+        storeId: store.id,
+        orderId,
+        type: "delivery_update",
+        title: "Status pengiriman diperbarui",
+        message: `Pesanan ${order.product_name} sudah ditandai dikirim.`,
+      });
+    } else if (newStatus === "selesai") {
+      await buatNotifikasi(supabase, {
+        storeId: store.id,
+        orderId,
+        type: "pesanan_selesai",
+        title: "Pesanan selesai",
+        message: `Pesanan ${order.product_name} sudah ditandai selesai diterima pembeli.`,
+      });
+    }
   }
 
   const menuItems = [
@@ -75,9 +100,13 @@ export default function PesananPage() {
         </div>
       </aside>
 
-      <div className="flex-1 ml-60 p-8">
-        <h1 className="text-xl font-bold text-[#1C1C1A] mb-6">Pesanan</h1>
+      <div className="flex-1 ml-60">
+        <header className="bg-white border-b border-[#E5E2D9] px-8 py-4 flex items-center justify-between">
+          <h1 className="text-xl font-bold text-[#1C1C1A]">Pesanan</h1>
+          <NotificationBell storeId={store.id} />
+        </header>
 
+      <div className="p-8">
         <div className="bg-white rounded-xl border border-[#E5E2D9] overflow-hidden">
           {orders.length === 0 ? (
             <p className="text-sm text-[#8B8D85] text-center py-12">Belum ada pesanan masuk.</p>
@@ -89,11 +118,14 @@ export default function PesananPage() {
                   <th className="px-4 py-3 font-medium">Pembeli</th>
                   <th className="px-4 py-3 font-medium">Qty</th>
                   <th className="px-4 py-3 font-medium">Total</th>
+                  <th className="px-4 py-3 font-medium">Batas kirim</th>
                   <th className="px-4 py-3 font-medium">Status</th>
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => (
+                {orders.map((o) => {
+                  const batasKirim = hitungBatasKirim(o);
+                  return (
                   <tr key={o.id} className="border-t border-[#F1EFE8]">
                     <td className="px-4 py-3 text-[#1C1C1A]">{o.product_name}</td>
                     <td className="px-4 py-3 text-[#5B6472]">
@@ -110,6 +142,13 @@ export default function PesananPage() {
                       Rp{Number(o.total_price).toLocaleString("id-ID")}
                     </td>
                     <td className="px-4 py-3">
+                      {batasKirim && (
+                        <span className={`text-xs font-medium px-2 py-1 rounded-full ${batasKirim.color}`}>
+                          {batasKirim.label}
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
                       <select
                         value={o.status}
                         onChange={(e) => updateStatus(o.id, e.target.value)}
@@ -122,12 +161,30 @@ export default function PesananPage() {
                       </select>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           )}
         </div>
       </div>
+      </div>
     </main>
   );
+}
+
+// Pesanan yang udah dibayar tapi belum dikirim punya batas waktu 1 hari (24 jam)
+// sejak pembayaran masuk. Fungsi ini nentuin label & warnanya di tabel.
+function hitungBatasKirim(order) {
+  if (order.status !== "paid" || !order.paid_at) return null;
+  const deadline = new Date(order.paid_at).getTime() + 24 * 60 * 60 * 1000;
+  const sisaMs = deadline - Date.now();
+  if (sisaMs <= 0) {
+    return { label: "Lewat batas!", color: "bg-[#FBEAEA] text-[#A32D2D]" };
+  }
+  const sisaJam = Math.ceil(sisaMs / (60 * 60 * 1000));
+  return {
+    label: `${sisaJam} jam lagi`,
+    color: sisaJam <= 6 ? "bg-[#FFF4E0] text-[#B8860B]" : "bg-[#EAF1E8] text-[#3B6D11]",
+  };
 }

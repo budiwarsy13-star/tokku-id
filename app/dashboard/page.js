@@ -2,6 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
+import NotificationBell from "@/components/NotificationBell";
+import OnboardingGuide from "@/components/OnboardingGuide";
 import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Wallet, TrendingUp } from "lucide-react";
 
 export default function Dashboard() {
@@ -186,13 +188,18 @@ function DashboardShell({ store }) {
             <p className="text-xs text-[#8B8D85]">Toko kamu</p>
             <h1 className="font-bold text-[#1C1C1A]">{store.name}</h1>
           </div>
-          <a href={`https://tokku.id/${store.slug}`} target="_blank"
-            className="text-sm text-[#D85A30] bg-[#FAECE7] px-3 py-1.5 rounded-lg">
-            tokku.id/{store.slug}
-          </a>
+          <div className="flex items-center gap-3">
+            <a href={`https://tokku.id/${store.slug}`} target="_blank"
+              className="text-sm text-[#D85A30] bg-[#FAECE7] px-3 py-1.5 rounded-lg">
+              tokku.id/{store.slug}
+            </a>
+            <NotificationBell storeId={store.id} />
+          </div>
         </header>
 
         <div className="p-8 max-w-5xl">
+          <OnboardingGuide store={store} />
+
           {/* STAT CARDS */}
           <div className="grid grid-cols-3 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-[#E5E2D9] p-5">

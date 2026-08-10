@@ -1,0 +1,8 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/cek-pending",
+      "schedule": "0 3 * * *"
+    }
+  ]
+}
