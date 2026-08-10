@@ -209,25 +209,27 @@ function CheckoutModal({ product, store, accent, onClose }) {
     setSaving(true);
 
     const orderId = `TOKKU-${Date.now()}`;
-    const { data: orderData, error: orderError } = await supabase
-      .from("orders").insert({
-        store_id: store.id,
-        product_id: product.id,
-        product_name: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
-        buyer_name: buyerName,
-        buyer_phone: buyerPhone,
-        quantity,
-        total_price: totalPrice,
-        status: "pending",
-        destination_id: String(destinasi.id),
-        destination_label: destinasi.label,
-        full_address: alamatLengkap,
-        shipping_cost: selectedOngkir.cost,
-        courier: `${selectedOngkir.name} - ${selectedOngkir.service}`,
-        midtrans_order_id: orderId,
-      }).select().single();
+const productName = selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name;
 
-    if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + orderError.message); }
+const { error: orderError } = await supabase
+  .from("orders").insert({
+    store_id: store.id,
+    product_id: product.id,
+    product_name: productName,
+    buyer_name: buyerName,
+    buyer_phone: buyerPhone,
+    quantity,
+    total_price: totalPrice,
+    status: "pending",
+    destination_id: String(destinasi.id),
+    destination_label: destinasi.label,
+    full_address: alamatLengkap,
+    shipping_cost: selectedOngkir.cost,
+    courier: `${selectedOngkir.name} - ${selectedOngkir.service}`,
+    midtrans_order_id: orderId,
+  });
+
+if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + orderError.message); }
 
     const payRes = await fetch("/api/payment", {
       method: "POST",
@@ -239,7 +241,7 @@ function CheckoutModal({ product, store, accent, onClose }) {
         customerEmail: buyerEmail || `${buyerPhone}@tokku.id`,
         customerPhone: buyerPhone,
         items: [
-          { id: product.id, name: orderData.product_name, price: unitPrice, quantity },
+          { id: product.id, name: productName, price: unitPrice, quantity },
           ...(selectedOngkir.cost > 0 ? [{ id: "ongkir", name: `Ongkir ${selectedOngkir.name}`, price: selectedOngkir.cost, quantity: 1 }] : []),
         ],
       }),
