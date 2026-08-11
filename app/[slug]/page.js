@@ -271,8 +271,8 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
     setSuccess(true);
     },
     onError: () => alert("Pembayaran gagal. Silakan coba lagi."),
-    onClose: () => {},
-  }
+      onClose: () => {},
+    });
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
