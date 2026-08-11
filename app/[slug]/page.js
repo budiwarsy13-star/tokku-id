@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { buatNotifikasi } from "@/lib/notifications";
+import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase } from "@/lib/tracking";
 import { ShoppingCart, X, Search, Truck } from "lucide-react";
 
 export default function TokoPublik() {
@@ -25,6 +26,7 @@ export default function TokoPublik() {
         .order("created_at", { ascending: false });
       setProducts(productsData || []);
       setLoading(false);
+      initTracking(storeData);
     }
     fetchStore();
   }, [slug]);
@@ -108,7 +110,7 @@ export default function TokoPublik() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-12">
             {products.map((p) => (
-              <button key={p.id} onClick={() => setSelectedProduct(p)}
+              <button key={p.id} onClick={() => { setSelectedProduct(p); trackViewContent(store, p); }}
                 className="bg-white rounded-2xl border border-[#E5E2D9] overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 group">
                 <div className="aspect-square overflow-hidden" style={{ background: `${accent}11` }}>
                   {p.images?.[0] ? (
@@ -210,6 +212,13 @@ function CheckoutModal({ product, store, accent, onClose }) {
     if (!selectedOngkir) return alert("Pilih dulu kurir pengiriman.");
     setSaving(true);
 
+    trackInitiateCheckout(store, {
+      totalPrice,
+      productName: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
+      productId: product.id,
+      quantity,
+    });
+
     const orderId = `TOKKU-${Date.now()}`;
 const productName = selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name;
 
@@ -263,6 +272,7 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
     window.snap.pay(payData.token, {
       onSuccess: async () => {
         await supabase.from("orders").update({ status: "paid" }).eq("midtrans_order_id", orderId);
+        trackPurchase(store, { orderId, totalPrice, productName, productId: product.id, quantity });
         setPaymentStatus("paid");
         setSuccess(true);
       },

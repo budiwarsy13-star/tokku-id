@@ -116,14 +116,18 @@ export default function Dashboard() {
 function DashboardShell({ store }) {
   const [stats, setStats] = useState({ totalOrder: 0, totalPendapatan: 0, totalProduk: 0, produkTerlaris: [] });
   const [loadingStats, setLoadingStats] = useState(true);
+  const [trenMingguan, setTrenMingguan] = useState([]);
+  const [stokMenipis, setStokMenipis] = useState([]);
+  const [pesananTerbaru, setPesananTerbaru] = useState([]);
 
   useEffect(() => {
     async function fetchStats() {
-      const { count: totalProduk } = await supabase
-        .from("products").select("*", { count: "exact", head: true }).eq("store_id", store.id);
+      const { data: products } = await supabase
+        .from("products").select("id, name, stock").eq("store_id", store.id);
 
       const { data: orders } = await supabase
-        .from("orders").select("*").eq("store_id", store.id);
+        .from("orders").select("*").eq("store_id", store.id)
+        .order("created_at", { ascending: false });
 
       const totalOrder = orders?.length || 0;
       const ordersPaid = orders?.filter((o) => o.status !== "pending") || [];
@@ -137,11 +141,44 @@ function DashboardShell({ store }) {
         .sort((a, b) => b[1] - a[1])
         .slice(0, 3);
 
-      setStats({ totalOrder, totalPendapatan, totalProduk: totalProduk || 0, produkTerlaris });
+      // Tren pendapatan 8 minggu terakhir (cuma order yang udah dibayar)
+      const minggu = [];
+      for (let i = 7; i >= 0; i--) {
+        const mulai = new Date();
+        mulai.setDate(mulai.getDate() - mulai.getDay() - i * 7);
+        mulai.setHours(0, 0, 0, 0);
+        const akhir = new Date(mulai);
+        akhir.setDate(akhir.getDate() + 7);
+        const total = ordersPaid
+          .filter((o) => {
+            const t = new Date(o.paid_at || o.created_at);
+            return t >= mulai && t < akhir;
+          })
+          .reduce((sum, o) => sum + Number(o.total_price), 0);
+        minggu.push({ label: mulai.toLocaleDateString("id-ID", { day: "2-digit", month: "short" }), total });
+      }
+      setTrenMingguan(minggu);
+
+      // Stok menipis (<= 5)
+      const menipis = (products || [])
+        .filter((p) => p.stock <= 5)
+        .sort((a, b) => a.stock - b.stock)
+        .slice(0, 5);
+      setStokMenipis(menipis);
+
+      // Pesanan terbaru (5)
+      setPesananTerbaru((orders || []).slice(0, 5));
+
+      setStats({ totalOrder, totalPendapatan, totalProduk: products?.length || 0, produkTerlaris });
       setLoadingStats(false);
     }
     fetchStats();
   }, [store.id]);
+
+  const statusBadge = {
+    pending: { label: "Menunggu bayar", className: "bg-[#F1EFE8] text-[#5B6472]" },
+    paid: { label: "Dibayar", className: "bg-[#EAF3DE] text-[#3B6D11]" },
+  };
 
   const menuItems = [
     { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard", active: true },
@@ -221,6 +258,94 @@ function DashboardShell({ store }) {
                 <Package size={14} /> Total produk
               </div>
               <p className="text-2xl font-bold text-[#1C1C1A]">{loadingStats ? "..." : stats.totalProduk}</p>
+            </div>
+          </div>
+
+          {/* TREN PENDAPATAN */}
+          <div className="bg-white rounded-xl border border-[#E5E2D9] p-6 mb-6">
+            <div className="flex items-center gap-2 mb-4">
+              <TrendingUp size={18} className="text-[#D85A30]" />
+              <h2 className="font-bold text-[#1C1C1A]">Tren pendapatan (8 minggu terakhir)</h2>
+            </div>
+            {loadingStats ? (
+              <p className="text-sm text-[#8B8D85]">Memuat...</p>
+            ) : trenMingguan.every((m) => m.total === 0) ? (
+              <p className="text-sm text-[#8B8D85] text-center py-6">
+                Belum ada pendapatan. Grafik bakal mulai keisi setelah ada pesanan dibayar.
+              </p>
+            ) : (
+              <div className="flex items-end gap-2 h-32">
+                {trenMingguan.map((m) => {
+                  const max = Math.max(...trenMingguan.map((x) => x.total), 1);
+                  const heightPct = Math.max((m.total / max) * 100, m.total > 0 ? 6 : 2);
+                  return (
+                    <div key={m.label} className="flex-1 flex flex-col items-center justify-end h-full group relative">
+                      <div className="absolute -top-6 opacity-0 group-hover:opacity-100 transition-opacity text-[10px] font-medium text-[#1C1C1A] whitespace-nowrap bg-white border border-[#E5E2D9] px-1.5 py-0.5 rounded">
+                        Rp{m.total.toLocaleString("id-ID")}
+                      </div>
+                      <div
+                        className="w-full rounded-t-md transition-all"
+                        style={{ height: `${heightPct}%`, background: m.total > 0 ? "#D85A30" : "#F1EFE8" }}
+                      />
+                      <span className="text-[10px] text-[#8B8D85] mt-1.5">{m.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mb-6">
+            {/* STOK MENIPIS */}
+            <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <Package size={18} className="text-[#D85A30]" />
+                <h2 className="font-bold text-[#1C1C1A]">Stok menipis</h2>
+              </div>
+              {loadingStats ? (
+                <p className="text-sm text-[#8B8D85]">Memuat...</p>
+              ) : stokMenipis.length === 0 ? (
+                <p className="text-sm text-[#8B8D85] text-center py-6">Stok semua produk masih aman.</p>
+              ) : (
+                <div className="space-y-2">
+                  {stokMenipis.map((p) => (
+                    <div key={p.id} className="flex items-center justify-between py-2 border-b border-[#F1EFE8] last:border-0">
+                      <span className="text-sm text-[#1C1C1A] line-clamp-1">{p.name}</span>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${p.stock === 0 ? "bg-[#FBEAEA] text-[#A32D2D]" : "bg-[#FAEEDA] text-[#854F0B]"}`}>
+                        {p.stock === 0 ? "Habis" : `Sisa ${p.stock}`}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* PESANAN TERBARU */}
+            <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">
+              <div className="flex items-center gap-2 mb-4">
+                <ShoppingBag size={18} className="text-[#D85A30]" />
+                <h2 className="font-bold text-[#1C1C1A]">Pesanan terbaru</h2>
+              </div>
+              {loadingStats ? (
+                <p className="text-sm text-[#8B8D85]">Memuat...</p>
+              ) : pesananTerbaru.length === 0 ? (
+                <p className="text-sm text-[#8B8D85] text-center py-6">Belum ada pesanan masuk.</p>
+              ) : (
+                <div className="space-y-2">
+                  {pesananTerbaru.map((o) => (
+                    <a key={o.id} href="/dashboard/pesanan"
+                      className="flex items-center justify-between py-2 border-b border-[#F1EFE8] last:border-0 hover:bg-[#FAFAF7] -mx-2 px-2 rounded">
+                      <div className="min-w-0">
+                        <p className="text-sm text-[#1C1C1A] line-clamp-1">{o.buyer_name}</p>
+                        <p className="text-xs text-[#8B8D85] line-clamp-1">{o.product_name}</p>
+                      </div>
+                      <span className={`text-xs font-medium px-2 py-0.5 rounded-full whitespace-nowrap ml-2 ${(statusBadge[o.status] || statusBadge.pending).className}`}>
+                        {(statusBadge[o.status] || statusBadge.pending).label}
+                      </span>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

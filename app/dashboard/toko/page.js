@@ -23,6 +23,13 @@ export default function PengaturanToko() {
   const bannerRef = useRef();
   const logoRef = useRef();
 
+  // Tracking state
+  const [metaPixelId, setMetaPixelId] = useState("");
+  const [metaAccessToken, setMetaAccessToken] = useState("");
+  const [ga4MeasurementId, setGa4MeasurementId] = useState("");
+  const [ga4ApiSecret, setGa4ApiSecret] = useState("");
+  const [savingTracking, setSavingTracking] = useState(false);
+
   useEffect(() => {
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -32,6 +39,10 @@ export default function PengaturanToko() {
       setStore(storeData);
       setDescription(storeData.description || "");
       setAccentColor(storeData.accent_color || "#D85A30");
+      setMetaPixelId(storeData.meta_pixel_id || "");
+      setMetaAccessToken(storeData.meta_access_token || "");
+      setGa4MeasurementId(storeData.ga4_measurement_id || "");
+      setGa4ApiSecret(storeData.ga4_api_secret || "");
       setLoading(false);
     }
     init();
@@ -80,6 +91,25 @@ export default function PengaturanToko() {
       showMsg("Gambar berhasil disimpan!");
     }
     setUploading(false);
+  }
+
+  async function saveTracking() {
+    setSavingTracking(true);
+    const { error } = await supabase.from("stores")
+      .update({
+        meta_pixel_id: metaPixelId || null,
+        meta_access_token: metaAccessToken || null,
+        ga4_measurement_id: ga4MeasurementId || null,
+        ga4_api_secret: ga4ApiSecret || null,
+      })
+      .eq("id", store.id);
+    setSavingTracking(false);
+    if (!error) {
+      setStore((prev) => ({ ...prev, meta_pixel_id: metaPixelId, ga4_measurement_id: ga4MeasurementId }));
+      showMsg("Pengaturan tracking berhasil disimpan!");
+    } else {
+      alert("Gagal menyimpan: " + error.message);
+    }
   }
 
   async function saveAppearance() {
@@ -161,6 +191,7 @@ export default function PengaturanToko() {
           {[
             { id: "alamat", label: "📍 Alamat Kirim" },
             { id: "tampilan", label: "🎨 Tampilan Toko" },
+            { id: "tracking", label: "📊 Tracking & Iklan" },
           ].map((tab) => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               className={`flex-1 py-2 rounded-lg text-sm font-medium transition-colors ${
@@ -315,6 +346,72 @@ export default function PengaturanToko() {
             <button onClick={saveAppearance} disabled={saving}
               className="w-full py-3 bg-[#D85A30] text-white rounded-xl font-medium hover:bg-[#B84A25] transition-colors disabled:opacity-50">
               {saving ? "Menyimpan..." : "Simpan tampilan toko"}
+            </button>
+          </div>
+        )}
+        {/* TAB: TRACKING */}
+        {activeTab === "tracking" && (
+          <div className="space-y-4">
+            <div className="bg-[#FAECE7] text-[#712B13] text-sm px-4 py-3 rounded-lg">
+              Data ini dipakai buat ngukur seberapa efektif iklan kamu (Meta/Google Ads) dan optimasi
+              otomatis lewat conversion rate. Kalau belum pasang iklan, boleh dilewatin dulu.
+            </div>
+
+            <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">
+              <h2 className="font-bold text-[#1C1C1A] mb-1">Meta Pixel (Facebook/Instagram Ads)</h2>
+              <p className="text-sm text-[#8B8D85] mb-4">
+                Pixel ID dari Meta Events Manager. Dipasang otomatis di halaman toko kamu buat lacak
+                ViewContent, InitiateCheckout, dan Purchase.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Pixel ID</label>
+                  <input type="text" value={metaPixelId} onChange={(e) => setMetaPixelId(e.target.value)}
+                    placeholder="Contoh: 1234567890123456"
+                    className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">
+                    Access Token <span className="text-[#8B8D85] normal-case font-normal">(opsional, buat tracking pembayaran yang lebih akurat)</span>
+                  </label>
+                  <input type="password" value={metaAccessToken} onChange={(e) => setMetaAccessToken(e.target.value)}
+                    placeholder="Dari Events Manager > Conversions API > Generate Access Token"
+                    className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
+                  <p className="text-xs text-[#8B8D85] mt-1.5">
+                    Tanpa ini, event Purchase cuma dilacak dari browser pembeli (bisa kelewat kalau
+                    koneksi mereka putus). Dengan ini, pembayaran sukses juga dilaporkan langsung dari
+                    server tokku.id, jadi datanya lebih lengkap dan akurat.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">
+              <h2 className="font-bold text-[#1C1C1A] mb-1">Google Analytics 4 / Google Ads</h2>
+              <p className="text-sm text-[#8B8D85] mb-4">
+                Measurement ID dari GA4 Admin &gt; Data Streams. Format: G-XXXXXXXXXX.
+              </p>
+              <div className="space-y-3">
+                <div>
+                  <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Measurement ID</label>
+                  <input type="text" value={ga4MeasurementId} onChange={(e) => setGa4MeasurementId(e.target.value)}
+                    placeholder="G-XXXXXXXXXX"
+                    className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">
+                    API Secret <span className="text-[#8B8D85] normal-case font-normal">(opsional, buat tracking pembayaran yang lebih akurat)</span>
+                  </label>
+                  <input type="password" value={ga4ApiSecret} onChange={(e) => setGa4ApiSecret(e.target.value)}
+                    placeholder="Dari GA4 Admin > Data Streams > Measurement Protocol API secrets"
+                    className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
+                </div>
+              </div>
+            </div>
+
+            <button onClick={saveTracking} disabled={savingTracking}
+              className="w-full py-3 bg-[#D85A30] text-white rounded-xl font-medium hover:bg-[#B84A25] transition-colors disabled:opacity-50">
+              {savingTracking ? "Menyimpan..." : "Simpan pengaturan tracking"}
             </button>
           </div>
         )}
