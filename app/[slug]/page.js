@@ -172,10 +172,49 @@ function CheckoutModal({ product, store, accent, onClose }) {
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
   const [paymentStatus, setPaymentStatus] = useState(null); // "paid" | "pending"
+  const [kodeDiskon, setKodeDiskon] = useState("");
+  const [diskonTerpakai, setDiskonTerpakai] = useState(null); // { code, discountAmount, message }
+  const [cekingDiskon, setCekingDiskon] = useState(false);
+  const [diskonError, setDiskonError] = useState("");
 
   const unitPrice = selectedVariant ? selectedVariant.price : product.price;
   const subtotal = unitPrice * quantity;
-  const totalPrice = subtotal + (selectedOngkir?.cost || 0);
+  const totalSebelumDiskon = subtotal + (selectedOngkir?.cost || 0);
+  const totalPrice = Math.max(totalSebelumDiskon - (diskonTerpakai?.discountAmount || 0), 0);
+
+  async function handleTerapkanDiskon(e) {
+    e.preventDefault();
+    if (!kodeDiskon.trim()) return;
+    setCekingDiskon(true);
+    setDiskonError("");
+    const res = await fetch("/api/discount/validate", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ code: kodeDiskon, storeId: store.id, subtotal: totalSebelumDiskon }),
+    });
+    const data = await res.json();
+    setCekingDiskon(false);
+    if (data.valid) {
+      setDiskonTerpakai({ code: data.code, discountAmount: data.discountAmount, message: data.message });
+    } else {
+      setDiskonTerpakai(null);
+      setDiskonError(data.message || "Kode diskon gak valid.");
+    }
+  }
+
+  function hapusDiskon() {
+    setDiskonTerpakai(null);
+    setKodeDiskon("");
+    setDiskonError("");
+  }
+
+  useEffect(() => {
+    if (diskonTerpakai) {
+      setDiskonTerpakai(null);
+      setDiskonError("Kode diskon direset karena pesanan berubah, terapkan lagi ya.");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [quantity, selectedVariant, selectedOngkir]);
 
   async function handleCariAlamat(e) {
     e.preventDefault();
@@ -238,6 +277,8 @@ const { error: orderError } = await supabase
     shipping_cost: selectedOngkir.cost,
     courier: `${selectedOngkir.name} - ${selectedOngkir.service}`,
     midtrans_order_id: orderId,
+    discount_code: diskonTerpakai?.code || null,
+    discount_amount: diskonTerpakai?.discountAmount || 0,
   });
 
 if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + orderError.message); }
@@ -261,6 +302,7 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
         items: [
           { id: product.id, name: productName, price: unitPrice, quantity },
           ...(selectedOngkir.cost > 0 ? [{ id: "ongkir", name: `Ongkir ${selectedOngkir.name}`, price: selectedOngkir.cost, quantity: 1 }] : []),
+          ...(diskonTerpakai?.discountAmount > 0 ? [{ id: "diskon", name: `Diskon (${diskonTerpakai.code})`, price: -diskonTerpakai.discountAmount, quantity: 1 }] : []),
         ],
       }),
     });
@@ -473,6 +515,35 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
               </div>
             )}
 
+            {destinasi && (
+              <div>
+                <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">
+                  Kode diskon <span className="text-[#8B8D85] normal-case font-normal">(opsional)</span>
+                </label>
+                {diskonTerpakai ? (
+                  <div className="flex items-center justify-between px-3 py-2.5 rounded-xl text-sm bg-[#EAF3DE] border border-[#C0DD97]">
+                    <span className="text-[#27500A]">{diskonTerpakai.message}</span>
+                    <button type="button" onClick={hapusDiskon} className="text-xs text-[#27500A] underline">Hapus</button>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input type="text" value={kodeDiskon}
+                      onChange={(e) => { setKodeDiskon(e.target.value.toUpperCase()); setDiskonError(""); }}
+                      placeholder="Masukin kode diskon"
+                      className="flex-1 px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm font-mono focus:outline-none"
+                      onFocus={(e) => e.target.style.borderColor = accent}
+                      onBlur={(e) => e.target.style.borderColor = "#E5E2D9"} />
+                    <button type="button" onClick={handleTerapkanDiskon} disabled={cekingDiskon || !kodeDiskon.trim()}
+                      className="px-4 py-2 rounded-lg text-white text-sm font-medium transition-colors disabled:opacity-50"
+                      style={{ background: accent }}>
+                      {cekingDiskon ? "..." : "Pakai"}
+                    </button>
+                  </div>
+                )}
+                {diskonError && <p className="text-xs text-[#A32D2D] mt-1.5">{diskonError}</p>}
+              </div>
+            )}
+
             <div className="pt-3 border-t border-[#E5E2D9] space-y-1.5">
               <div className="flex justify-between text-sm text-[#5B6472]">
                 <span>Subtotal</span><span>Rp{subtotal.toLocaleString("id-ID")}</span>
@@ -480,6 +551,11 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
               <div className="flex justify-between text-sm text-[#5B6472]">
                 <span>Ongkir</span><span>Rp{(selectedOngkir?.cost || 0).toLocaleString("id-ID")}</span>
               </div>
+              {diskonTerpakai && (
+                <div className="flex justify-between text-sm text-[#3B6D11]">
+                  <span>Diskon ({diskonTerpakai.code})</span><span>-Rp{diskonTerpakai.discountAmount.toLocaleString("id-ID")}</span>
+                </div>
+              )}
               <div className="flex justify-between pt-1.5">
                 <span className="font-semibold text-[#1C1C1A]">Total</span>
                 <span className="text-lg font-black text-[#1C1C1A]">Rp{totalPrice.toLocaleString("id-ID")}</span>

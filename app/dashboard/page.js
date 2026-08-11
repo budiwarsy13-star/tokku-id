@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import OnboardingGuide from "@/components/OnboardingGuide";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Wallet, TrendingUp } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Wallet, TrendingUp, Tag } from "lucide-react";
 
 export default function Dashboard() {
   const [user, setUser] = useState(null);
@@ -184,6 +184,7 @@ function DashboardShell({ store }) {
     { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard", active: true },
     { icon: Package, label: "Produk", href: "/dashboard/produk" },
     { icon: ShoppingBag, label: "Pesanan", href: "/dashboard/pesanan" },
+    { icon: Tag, label: "Diskon", href: "/dashboard/diskon" },
     { icon: Store, label: "Pengaturan toko", href: "/dashboard/toko" },
   ];
 

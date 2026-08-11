@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { buatNotifikasi } from "@/lib/notifications";
 import NotificationBell from "@/components/NotificationBell";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag } from "lucide-react";
 
 const STATUS_LABEL = {
   pending: { label: "Menunggu", color: "bg-[#FFF4E0] text-[#B8860B]" },
@@ -66,6 +66,7 @@ export default function PesananPage() {
     { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard" },
     { icon: Package, label: "Produk", href: "/dashboard/produk" },
     { icon: ShoppingBag, label: "Pesanan", href: "/dashboard/pesanan", active: true },
+    { icon: Tag, label: "Diskon", href: "/dashboard/diskon" },
     { icon: Store, label: "Pengaturan toko", href: "/dashboard/toko" },
   ];
 

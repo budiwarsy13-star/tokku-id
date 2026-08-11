@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Search, Upload, Palette, Eye } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag, Search, Upload, Palette, Eye } from "lucide-react";
 
 export default function PengaturanToko() {
   const [store, setStore] = useState(null);
@@ -128,6 +128,7 @@ export default function PengaturanToko() {
     { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard" },
     { icon: Package, label: "Produk", href: "/dashboard/produk" },
     { icon: ShoppingBag, label: "Pesanan", href: "/dashboard/pesanan" },
+    { icon: Tag, label: "Diskon", href: "/dashboard/diskon" },
     { icon: Store, label: "Pengaturan toko", href: "/dashboard/toko", active: true },
   ];
 

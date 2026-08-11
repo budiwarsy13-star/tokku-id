@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag } from "lucide-react";
 
 export default function ProdukPage() {
   const [store, setStore] = useState(null);
@@ -30,6 +30,7 @@ export default function ProdukPage() {
     { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard" },
     { icon: Package, label: "Produk", href: "/dashboard/produk", active: true },
     { icon: ShoppingBag, label: "Pesanan", href: "/dashboard/pesanan" },
+    { icon: Tag, label: "Diskon", href: "/dashboard/diskon" },
     { icon: Store, label: "Pengaturan toko", href: "/dashboard/toko" },
   ];
 
