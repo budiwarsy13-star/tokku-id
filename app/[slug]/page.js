@@ -148,6 +148,8 @@ export default function TokoPublik() {
         Dibuat dengan{" "}
         <a href="/" className="font-medium hover:underline" style={{ color: accent }}>tokku.id</a>
         {" "}· Jualan langsung tanpa potongan marketplace
+        <br />
+        <a href="/lacak" className="hover:underline mt-1 inline-block">Lacak pesanan kamu</a>
       </footer>
     </main>
   );
@@ -176,6 +178,7 @@ function CheckoutModal({ product, store, accent, onClose }) {
   const [diskonTerpakai, setDiskonTerpakai] = useState(null); // { code, discountAmount, message }
   const [cekingDiskon, setCekingDiskon] = useState(false);
   const [diskonError, setDiskonError] = useState("");
+  const [lastOrderId, setLastOrderId] = useState("");
 
   const unitPrice = selectedVariant ? selectedVariant.price : product.price;
   const subtotal = unitPrice * quantity;
@@ -259,6 +262,7 @@ function CheckoutModal({ product, store, accent, onClose }) {
     });
 
     const orderId = `TOKKU-${Date.now()}`;
+    setLastOrderId(orderId);
 const productName = selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name;
 
 const { error: orderError } = await supabase
@@ -347,7 +351,14 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
                 ? "Pembayaran kamu sudah berhasil. Pesananmu udah masuk ke toko."
                 : "Pesananmu tercatat! Selesaikan pembayaran sesuai instruksi, status bakal otomatis berubah begitu pembayaran dikonfirmasi."}
             </p>
-          
+            <div className="bg-[#FAFAF7] border border-[#E5E2D9] rounded-lg px-4 py-3 mb-4 text-left">
+              <p className="text-xs text-[#8B8D85] mb-0.5">Order ID kamu (simpan buat lacak pesanan)</p>
+              <p className="text-sm font-mono font-semibold text-[#1C1C1A]">{lastOrderId}</p>
+            </div>
+            <a href={`/lacak?order=${lastOrderId}`}
+              className="block w-full py-2.5 mb-2 text-center text-sm font-medium rounded-lg border border-[#E5E2D9] text-[#5B6472] hover:bg-[#FAFAF7] transition-colors">
+              Lacak status pesanan
+            </a>
             <button onClick={onClose}
               className="w-full py-3 text-white rounded-lg font-medium transition-colors"
               style={{ background: accent }}>
