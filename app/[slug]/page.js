@@ -267,12 +267,13 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
         setSuccess(true);
       },
       onPending: () => {
-    setPaymentStatus("pending");
-    setSuccess(true);
-    },
-    onError: () => alert("Pembayaran gagal. Silakan coba lagi."),
+        setPaymentStatus("pending");
+        setSuccess(true);
+      },
+      onError: () => alert("Pembayaran gagal. Silakan coba lagi."),
       onClose: () => {},
     });
+  }
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
@@ -290,9 +291,9 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
             </div>
             <p className="text-sm text-[#5B6472] mb-1">Terima kasih, {buyerName}!</p>
             <p className="text-sm text-[#8B8D85] mb-6">
-              {paymentStatus === "paid"}
-              ? "Pembayaran kamu sudah berhasil. Pesananmu udah masuk ke toko."
-              : "Pesananmu tercatat! Selesaikan pembayaran sesuai instruksi, status bakal otomatis berubah begitu pembayaran dikonfirmasi."}
+              {paymentStatus === "paid"
+                ? "Pembayaran kamu sudah berhasil. Pesananmu udah masuk ke toko."
+                : "Pesananmu tercatat! Selesaikan pembayaran sesuai instruksi, status bakal otomatis berubah begitu pembayaran dikonfirmasi."}
             </p>
           
             <button onClick={onClose}
