@@ -6,6 +6,25 @@ import NotificationBell from "@/components/NotificationBell";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Wallet, TrendingUp, Tag } from "lucide-react";
 
+function persenPerubahan(sekarang, kemarin) {
+  if (kemarin === 0) return sekarang > 0 ? 100 : 0;
+  return ((sekarang - kemarin) / kemarin) * 100;
+}
+
+function PerformaItem({ label, value, delta }) {
+  const naik = delta > 0;
+  const turun = delta < 0;
+  return (
+    <div>
+      <p className="text-xs text-[#8B8D85] mb-1">{label}</p>
+      <p className="text-lg font-bold text-[#1C1C1A]">{value}</p>
+      <p className={`text-xs ${naik ? "text-[#3B6D11]" : turun ? "text-[#A32D2D]" : "text-[#8B8D85]"}`}>
+        {naik ? "↑" : turun ? "↓" : "—"} {Math.abs(delta).toFixed(1)}%
+      </p>
+    </div>
+  );
+}
+
 export default function Dashboard() {
   const [user, setUser] = useState(null);
   const [store, setStore] = useState(null);
@@ -119,6 +138,43 @@ function DashboardShell({ store }) {
   const [trenMingguan, setTrenMingguan] = useState([]);
   const [stokMenipis, setStokMenipis] = useState([]);
   const [pesananTerbaru, setPesananTerbaru] = useState([]);
+  const [performa, setPerforma] = useState(null);
+
+  useEffect(() => {
+    async function fetchPerforma() {
+      const awalHariIni = new Date(); awalHariIni.setHours(0, 0, 0, 0);
+      const awalKemarin = new Date(awalHariIni); awalKemarin.setDate(awalKemarin.getDate() - 1);
+
+      const [pengunjungHariIni, pengunjungKemarin, klikHariIni, klikKemarin, orderHariIni, orderKemarin] = await Promise.all([
+        supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "view_toko").gte("created_at", awalHariIni.toISOString()),
+        supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "view_toko").gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
+        supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "klik_produk").gte("created_at", awalHariIni.toISOString()),
+        supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "klik_produk").gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
+        supabase.from("orders").select("id, total_price, status", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalHariIni.toISOString()),
+        supabase.from("orders").select("id, total_price, status", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
+      ]);
+
+      const pengunjung = pengunjungHariIni.count || 0;
+      const pengunjungY = pengunjungKemarin.count || 0;
+      const klik = klikHariIni.count || 0;
+      const klikY = klikKemarin.count || 0;
+      const pesanan = orderHariIni.count || 0;
+      const pesananY = orderKemarin.count || 0;
+      const penjualan = (orderHariIni.data || []).filter((o) => o.status !== "pending").reduce((s, o) => s + Number(o.total_price), 0);
+      const penjualanY = (orderKemarin.data || []).filter((o) => o.status !== "pending").reduce((s, o) => s + Number(o.total_price), 0);
+      const konversi = pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0;
+      const konversiY = pengunjungY > 0 ? (pesananY / pengunjungY) * 100 : 0;
+
+      setPerforma({
+        penjualan, penjualanDelta: persenPerubahan(penjualan, penjualanY),
+        pengunjung, pengunjungDelta: persenPerubahan(pengunjung, pengunjungY),
+        klik, klikDelta: persenPerubahan(klik, klikY),
+        pesanan, pesananDelta: persenPerubahan(pesanan, pesananY),
+        konversi, konversiDelta: persenPerubahan(konversi, konversiY),
+      });
+    }
+    fetchPerforma();
+  }, [store.id]);
 
   useEffect(() => {
     async function fetchStats() {
@@ -260,6 +316,25 @@ function DashboardShell({ store }) {
               </div>
               <p className="text-2xl font-bold text-[#1C1C1A]">{loadingStats ? "..." : stats.totalProduk}</p>
             </div>
+          </div>
+
+          {/* PERFORMA TOKO (hari ini vs kemarin) */}
+          <div className="bg-white rounded-xl border border-[#E5E2D9] p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="font-bold text-[#1C1C1A]">Performa toko</h2>
+              <span className="text-xs text-[#8B8D85]">Dibanding kemarin</span>
+            </div>
+            {!performa ? (
+              <p className="text-sm text-[#8B8D85]">Memuat...</p>
+            ) : (
+              <div className="grid grid-cols-5 gap-4">
+                <PerformaItem label="Penjualan" value={`Rp${performa.penjualan.toLocaleString("id-ID")}`} delta={performa.penjualanDelta} />
+                <PerformaItem label="Total pengunjung" value={performa.pengunjung} delta={performa.pengunjungDelta} />
+                <PerformaItem label="Produk diklik" value={performa.klik} delta={performa.klikDelta} />
+                <PerformaItem label="Pesanan" value={performa.pesanan} delta={performa.pesananDelta} />
+                <PerformaItem label="Tingkat konversi" value={`${performa.konversi.toFixed(1)}%`} delta={performa.konversiDelta} />
+              </div>
+            )}
           </div>
 
           {/* TREN PENDAPATAN */}

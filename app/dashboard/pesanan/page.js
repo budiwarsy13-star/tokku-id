@@ -1,22 +1,34 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { buatNotifikasi } from "@/lib/notifications";
 import NotificationBell from "@/components/NotificationBell";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag } from "lucide-react";
+import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag, Clock, Truck, CheckCircle2, XCircle, Search } from "lucide-react";
 
 const STATUS_LABEL = {
   pending: { label: "Menunggu", color: "bg-[#FFF4E0] text-[#B8860B]" },
   paid: { label: "Dibayar", color: "bg-[#EAF1E8] text-[#3B6D11]" },
   shipped: { label: "Dikirim", color: "bg-[#E8F0FA] text-[#2563EB]" },
   selesai: { label: "Selesai", color: "bg-[#F1EFE8] text-[#5B6472]" },
+  gagal: { label: "Dibatalkan", color: "bg-[#FBEAEA] text-[#A32D2D]" },
 };
+
+// Definisi tab filter. `match` nentuin order mana yang masuk tab ini.
+const TABS = [
+  { key: "semua", label: "Semua", match: () => true },
+  { key: "perlu_diproses", label: "Perlu diproses", match: (o) => o.status === "paid" },
+  { key: "dikirim", label: "Sedang dikirim", match: (o) => o.status === "shipped" },
+  { key: "selesai", label: "Selesai", match: (o) => o.status === "selesai" },
+  { key: "dibatalkan", label: "Dibatalkan", match: (o) => o.status === "gagal" },
+];
 
 export default function PesananPage() {
   const [store, setStore] = useState(null);
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState("semua");
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     async function init() {
@@ -62,6 +74,32 @@ export default function PesananPage() {
     }
   }
 
+  // Hitung jumlah tiap kategori sekali aja, dipakai buat angka di stat card & badge tab
+  const counts = useMemo(() => {
+    const c = { perlu_diproses: 0, dikirim: 0, selesai: 0, dibatalkan: 0 };
+    for (const o of orders) {
+      if (o.status === "paid") c.perlu_diproses++;
+      else if (o.status === "shipped") c.dikirim++;
+      else if (o.status === "selesai") c.selesai++;
+      else if (o.status === "gagal") c.dibatalkan++;
+    }
+    return c;
+  }, [orders]);
+
+  const filteredOrders = useMemo(() => {
+    const tab = TABS.find((t) => t.key === activeTab) || TABS[0];
+    const q = search.trim().toLowerCase();
+    return orders.filter((o) => {
+      if (!tab.match(o)) return false;
+      if (!q) return true;
+      return (
+        o.buyer_name?.toLowerCase().includes(q) ||
+        o.product_name?.toLowerCase().includes(q) ||
+        o.id?.toLowerCase().includes(q)
+      );
+    });
+  }, [orders, activeTab, search]);
+
   const menuItems = [
     { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard" },
     { icon: Package, label: "Produk", href: "/dashboard/produk" },
@@ -73,6 +111,13 @@ export default function PesananPage() {
   if (loading) {
     return <main className="min-h-screen bg-[#FAFAF7] flex items-center justify-center"><p className="text-[#8B8D85]">Memuat...</p></main>;
   }
+
+  const statCards = [
+    { key: "perlu_diproses", label: "Perlu diproses", value: counts.perlu_diproses, icon: Clock, color: "#B8860B" },
+    { key: "dikirim", label: "Sedang dikirim", value: counts.dikirim, icon: Truck, color: "#2563EB" },
+    { key: "selesai", label: "Selesai", value: counts.selesai, icon: CheckCircle2, color: "#3B6D11" },
+    { key: "dibatalkan", label: "Dibatalkan", value: counts.dibatalkan, icon: XCircle, color: "#A32D2D" },
+  ];
 
   return (
     <main className="min-h-screen bg-[#FAFAF7] font-[family-name:var(--font-baloo)] flex">
@@ -108,9 +153,54 @@ export default function PesananPage() {
         </header>
 
       <div className="p-8">
+        {/* STAT CARDS */}
+        <div className="grid grid-cols-4 gap-4 mb-6">
+          {statCards.map((s) => (
+            <button
+              key={s.key}
+              onClick={() => setActiveTab(s.key)}
+              className="bg-white rounded-xl border border-[#E5E2D9] p-4 text-left hover:border-[#D85A30] transition-colors"
+            >
+              <div className="flex items-center gap-2 text-xs mb-2" style={{ color: s.color }}>
+                <s.icon size={14} /> {s.label}
+              </div>
+              <p className="text-2xl font-bold text-[#1C1C1A]">{s.value}</p>
+            </button>
+          ))}
+        </div>
+
         <div className="bg-white rounded-xl border border-[#E5E2D9] overflow-hidden">
-          {orders.length === 0 ? (
-            <p className="text-sm text-[#8B8D85] text-center py-12">Belum ada pesanan masuk.</p>
+          {/* TABS + SEARCH */}
+          <div className="flex items-center justify-between gap-4 px-4 py-3 border-b border-[#E5E2D9] flex-wrap">
+            <div className="flex items-center gap-1 flex-wrap">
+              {TABS.map((t) => (
+                <button
+                  key={t.key}
+                  onClick={() => setActiveTab(t.key)}
+                  className={`text-xs font-medium px-3 py-1.5 rounded-full transition-colors ${
+                    activeTab === t.key ? "bg-[#1C1C1A] text-white" : "text-[#5B6472] hover:bg-[#F1EFE8]"
+                  }`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+            <div className="relative">
+              <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B8D85]" />
+              <input
+                type="text"
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                placeholder="Cari nama pembeli / produk..."
+                className="pl-8 pr-3 py-1.5 text-sm border border-[#E5E2D9] rounded-lg focus:outline-none focus:border-[#D85A30] w-56"
+              />
+            </div>
+          </div>
+
+          {filteredOrders.length === 0 ? (
+            <p className="text-sm text-[#8B8D85] text-center py-12">
+              {orders.length === 0 ? "Belum ada pesanan masuk." : "Gak ada pesanan yang cocok dengan filter/pencarian ini."}
+            </p>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-[#F1EFE8] text-[#5B6472] text-left">
@@ -124,7 +214,7 @@ export default function PesananPage() {
                 </tr>
               </thead>
               <tbody>
-                {orders.map((o) => {
+                {filteredOrders.map((o) => {
                   const batasKirim = hitungBatasKirim(o);
                   return (
                   <tr key={o.id} className="border-t border-[#F1EFE8]">
@@ -153,12 +243,14 @@ export default function PesananPage() {
                       <select
                         value={o.status}
                         onChange={(e) => updateStatus(o.id, e.target.value)}
-                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 ${STATUS_LABEL[o.status]?.color}`}
+                        disabled={o.status === "gagal"}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
                       >
                         <option value="pending">Menunggu</option>
                         <option value="paid">Dibayar</option>
                         <option value="shipped">Dikirim</option>
                         <option value="selesai">Selesai</option>
+                        {o.status === "gagal" && <option value="gagal">Dibatalkan</option>}
                       </select>
                     </td>
                   </tr>

@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { buatNotifikasi } from "@/lib/notifications";
-import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase } from "@/lib/tracking";
+import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent } from "@/lib/tracking";
 import { ShoppingCart, X, Search, Truck } from "lucide-react";
 
 export default function TokoPublik() {
@@ -27,6 +27,7 @@ export default function TokoPublik() {
       setProducts(productsData || []);
       setLoading(false);
       initTracking(storeData);
+      catatEvent(supabase, storeData.id, "view_toko");
     }
     fetchStore();
   }, [slug]);
@@ -110,7 +111,7 @@ export default function TokoPublik() {
         ) : (
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-12">
             {products.map((p) => (
-              <button key={p.id} onClick={() => { setSelectedProduct(p); trackViewContent(store, p); }}
+              <button key={p.id} onClick={() => { setSelectedProduct(p); trackViewContent(store, p); catatEvent(supabase, store.id, "klik_produk", p.id); }}
                 className="bg-white rounded-2xl border border-[#E5E2D9] overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 group">
                 <div className="aspect-square overflow-hidden" style={{ background: `${accent}11` }}>
                   {p.images?.[0] ? (
