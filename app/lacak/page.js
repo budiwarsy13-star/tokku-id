@@ -32,6 +32,27 @@ function LacakPesananContent() {
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+  const [confirmMsg, setConfirmMsg] = useState("");
+
+  async function handleKonfirmasiDiterima() {
+    if (!confirm("Pastikan barang udah kamu terima dalam kondisi baik. Konfirmasi sekarang?")) return;
+    setConfirming(true);
+    setConfirmMsg("");
+    const res = await fetch("/api/lacak/konfirmasi", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ orderId: result.orderId, buyerPhone }),
+    });
+    const data = await res.json();
+    setConfirming(false);
+    if (data.success) {
+      setResult({ ...result, status: "selesai", completedAt: data.completedAt });
+      setConfirmMsg("Makasih! Pesanan udah ditandai selesai.");
+    } else {
+      setConfirmMsg(data.message || "Gagal konfirmasi, coba lagi.");
+    }
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
@@ -135,6 +156,28 @@ function LacakPesananContent() {
                   );
                 })}
               </div>
+            )}
+
+            {/* KONFIRMASI DITERIMA (cuma muncul kalau status "shipped") */}
+            {result.status === "shipped" && (
+              <div className="mb-6">
+                <button
+                  onClick={handleKonfirmasiDiterima}
+                  disabled={confirming}
+                  className="w-full py-3 rounded-xl font-medium text-white transition-colors disabled:opacity-50"
+                  style={{ background: result.accentColor }}
+                >
+                  {confirming ? "Memproses..." : "Pesanan sudah saya terima"}
+                </button>
+                <p className="text-xs text-[#8B8D85] text-center mt-2">
+                  Klik ini kalau barang udah sampai dan kondisinya sesuai pesanan.
+                </p>
+              </div>
+            )}
+            {confirmMsg && (
+              <p className={`text-sm px-4 py-2.5 rounded-lg mb-4 ${result.status === "selesai" ? "bg-[#EAF1E8] text-[#3B6D11]" : "bg-[#FBEAEA] text-[#A32D2D]"}`}>
+                {confirmMsg}
+              </p>
             )}
 
             {/* DETAIL PENGIRIMAN */}
