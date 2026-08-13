@@ -95,6 +95,7 @@ export default function PesananPage() {
       return (
         o.buyer_name?.toLowerCase().includes(q) ||
         o.product_name?.toLowerCase().includes(q) ||
+        o.midtrans_order_id?.toLowerCase().includes(q) ||
         o.id?.toLowerCase().includes(q)
       );
     });
@@ -218,7 +219,17 @@ export default function PesananPage() {
                   const batasKirim = hitungBatasKirim(o);
                   return (
                   <tr key={o.id} className="border-t border-[#F1EFE8]">
-                    <td className="px-4 py-3 text-[#1C1C1A]">{o.product_name}</td>
+                    <td className="px-4 py-3 text-[#1C1C1A]">
+                      {o.product_name}
+                      <br />
+                      <button
+                        onClick={() => { navigator.clipboard.writeText(o.midtrans_order_id); }}
+                        title="Klik buat copy Order ID"
+                        className="text-xs text-[#8B8D85] font-mono hover:text-[#D85A30] hover:underline"
+                      >
+                        {o.midtrans_order_id}
+                      </button>
+                    </td>
                     <td className="px-4 py-3 text-[#5B6472]">
                       {o.buyer_name}
                       <br />
