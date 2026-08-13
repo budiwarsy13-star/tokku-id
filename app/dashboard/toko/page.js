@@ -43,6 +43,14 @@ export default function PengaturanToko() {
       setMetaAccessToken(storeData.meta_access_token || "");
       setGa4MeasurementId(storeData.ga4_measurement_id || "");
       setGa4ApiSecret(storeData.ga4_api_secret || "");
+
+      const { data: banners } = await supabase
+        .from("store_banners").select("*").eq("store_id", storeData.id).order("sort_order", { ascending: true });
+      setPromoBanners(banners || []);
+      const { data: products } = await supabase
+        .from("products").select("id, name").eq("store_id", storeData.id);
+      setProductOptions(products || []);
+
       setLoading(false);
     }
     init();
@@ -74,6 +82,53 @@ export default function PengaturanToko() {
   function showMsg(msg) {
     setSavedMsg(msg);
     setTimeout(() => setSavedMsg(""), 3000);
+  }
+
+  // Banner promosi (carousel)
+  const [promoBanners, setPromoBanners] = useState([]);
+  const [productOptions, setProductOptions] = useState([]);
+  const [promoUploading, setPromoUploading] = useState(false);
+  const promoRef = useRef();
+
+  async function uploadPromoBanner(file) {
+    if (!file) return;
+    setPromoUploading(true);
+    const ext = file.name.split(".").pop();
+    const path = `${store.id}/promo-${Date.now()}.${ext}`;
+    const { error: upErr } = await supabase.storage.from("Banner").upload(path, file, { upsert: true });
+    if (upErr) { alert("Gagal upload: " + upErr.message); setPromoUploading(false); return; }
+    const { data: urlData } = supabase.storage.from("Banner").getPublicUrl(path);
+    const { data: inserted, error: dbErr } = await supabase
+      .from("store_banners")
+      .insert({ store_id: store.id, image_url: urlData.publicUrl, sort_order: promoBanners.length })
+      .select().single();
+    if (!dbErr && inserted) {
+      setPromoBanners([...promoBanners, inserted]);
+      showMsg("Banner promosi ditambahkan!");
+    }
+    setPromoUploading(false);
+  }
+
+  async function updatePromoBannerProduct(bannerId, productId) {
+    await supabase.from("store_banners").update({ link_product_id: productId || null }).eq("id", bannerId);
+    setPromoBanners(promoBanners.map((b) => (b.id === bannerId ? { ...b, link_product_id: productId || null } : b)));
+  }
+
+  async function hapusPromoBanner(bannerId) {
+    if (!confirm("Hapus banner promosi ini?")) return;
+    await supabase.from("store_banners").delete().eq("id", bannerId);
+    setPromoBanners(promoBanners.filter((b) => b.id !== bannerId));
+  }
+
+  async function geserPromoBanner(index, arah) {
+    const target = index + arah;
+    if (target < 0 || target >= promoBanners.length) return;
+    const reordered = [...promoBanners];
+    [reordered[index], reordered[target]] = [reordered[target], reordered[index]];
+    setPromoBanners(reordered);
+    await Promise.all(
+      reordered.map((b, i) => supabase.from("store_banners").update({ sort_order: i }).eq("id", b.id))
+    );
   }
 
   async function uploadImage(file, bucket, field, setUploading) {
@@ -265,6 +320,51 @@ export default function PengaturanToko() {
               <button onClick={() => bannerRef.current?.click()} disabled={bannerUploading}
                 className="text-sm text-[#D85A30] hover:underline disabled:opacity-50">
                 {bannerUploading ? "Mengupload..." : store.banner_url ? "Ganti banner" : "Upload banner"}
+              </button>
+            </div>
+
+            {/* BANNER PROMOSI (CAROUSEL) */}
+            <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">
+              <h2 className="font-bold text-[#1C1C1A] mb-1">Banner promosi (carousel)</h2>
+              <p className="text-sm text-[#8B8D85] mb-4">
+                Tampil sebagai carousel berjalan di halaman toko. Bisa lebih dari 1 banner, dan
+                tiap banner bisa di-link ke produk tertentu — pembeli langsung diarahkan ke
+                produk itu pas diklik.
+              </p>
+
+              {promoBanners.length > 0 && (
+                <div className="space-y-3 mb-4">
+                  {promoBanners.map((b, i) => (
+                    <div key={b.id} className="flex items-center gap-3 border border-[#E5E2D9] rounded-lg p-2">
+                      <img src={b.image_url} alt="" className="w-20 h-12 rounded object-cover flex-shrink-0" />
+                      <select
+                        value={b.link_product_id || ""}
+                        onChange={(e) => updatePromoBannerProduct(b.id, e.target.value)}
+                        className="flex-1 text-sm border border-[#E5E2D9] rounded-lg px-2 py-1.5 focus:outline-none focus:border-[#D85A30]"
+                      >
+                        <option value="">Gak link ke produk manapun</option>
+                        {productOptions.map((p) => (
+                          <option key={p.id} value={p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                      <div className="flex flex-col">
+                        <button onClick={() => geserPromoBanner(i, -1)} disabled={i === 0}
+                          className="text-[#8B8D85] hover:text-[#1C1C1A] disabled:opacity-30 text-xs px-1">▲</button>
+                        <button onClick={() => geserPromoBanner(i, 1)} disabled={i === promoBanners.length - 1}
+                          className="text-[#8B8D85] hover:text-[#1C1C1A] disabled:opacity-30 text-xs px-1">▼</button>
+                      </div>
+                      <button onClick={() => hapusPromoBanner(b.id)}
+                        className="text-xs text-[#A32D2D] hover:underline px-2">Hapus</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <input ref={promoRef} type="file" accept="image/*" className="hidden"
+                onChange={(e) => { uploadPromoBanner(e.target.files[0]); e.target.value = ""; }} />
+              <button onClick={() => promoRef.current?.click()} disabled={promoUploading}
+                className="text-sm text-[#D85A30] hover:underline disabled:opacity-50 flex items-center gap-1">
+                <Upload size={14} /> {promoUploading ? "Mengupload..." : "+ Tambah banner promosi"}
               </button>
             </div>
 

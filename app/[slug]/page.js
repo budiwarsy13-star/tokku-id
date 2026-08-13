@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { buatNotifikasi } from "@/lib/notifications";
 import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent } from "@/lib/tracking";
+import PromoCarousel from "@/components/PromoCarousel";
 import { ShoppingCart, X, Search, Truck } from "lucide-react";
 
 export default function TokoPublik() {
@@ -14,6 +15,7 @@ export default function TokoPublik() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
+  const [banners, setBanners] = useState([]);
 
   useEffect(() => {
     async function fetchStore() {
@@ -25,6 +27,10 @@ export default function TokoPublik() {
         .from("products").select("*").eq("store_id", storeData.id)
         .order("created_at", { ascending: false });
       setProducts(productsData || []);
+      const { data: bannersData } = await supabase
+        .from("store_banners").select("*").eq("store_id", storeData.id)
+        .eq("is_active", true).order("sort_order", { ascending: true });
+      setBanners(bannersData || []);
       setLoading(false);
       initTracking(storeData);
       catatEvent(supabase, storeData.id, "view_toko");
@@ -58,6 +64,15 @@ export default function TokoPublik() {
 
   const accent = store.accent_color || "#D85A30";
   const accentDark = accent + "CC";
+
+  function handleBannerClick(banner) {
+    if (!banner.link_product_id) return;
+    const produk = products.find((p) => p.id === banner.link_product_id);
+    if (!produk) return;
+    setSelectedProduct(produk);
+    trackViewContent(store, produk);
+    catatEvent(supabase, store.id, "klik_produk", produk.id);
+  }
 
   return (
     <main className="min-h-screen bg-[#FAFAF7]">
@@ -96,6 +111,10 @@ export default function TokoPublik() {
 
         {store.description && (
           <p className="text-sm text-[#5B6472] mb-6 leading-relaxed">{store.description}</p>
+        )}
+
+        {banners.length > 0 && (
+          <PromoCarousel banners={banners} onBannerClick={handleBannerClick} accent={accent} />
         )}
 
         {/* DIVIDER */}
