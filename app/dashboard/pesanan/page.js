@@ -29,6 +29,7 @@ export default function PesananPage() {
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("semua");
   const [search, setSearch] = useState("");
+  const [orderUntukResi, setOrderUntukResi] = useState(null); // order yang lagi diisi nomor resi
 
   useEffect(() => {
     async function init() {
@@ -46,10 +47,13 @@ export default function PesananPage() {
     init();
   }, []);
 
-  async function updateStatus(orderId, newStatus) {
+  async function updateStatus(orderId, newStatus, waybillNumber) {
     const order = orders.find((o) => o.id === orderId);
     const updateData = { status: newStatus };
-    if (newStatus === "shipped") updateData.shipped_at = new Date().toISOString();
+    if (newStatus === "shipped") {
+      updateData.shipped_at = new Date().toISOString();
+      if (waybillNumber) updateData.waybill_number = waybillNumber;
+    }
     if (newStatus === "selesai") updateData.completed_at = new Date().toISOString();
 
     await supabase.from("orders").update(updateData).eq("id", orderId);
@@ -253,7 +257,13 @@ export default function PesananPage() {
                     <td className="px-4 py-3">
                       <select
                         value={o.status}
-                        onChange={(e) => updateStatus(o.id, e.target.value)}
+                        onChange={(e) => {
+                          if (e.target.value === "shipped") {
+                            setOrderUntukResi(o);
+                          } else {
+                            updateStatus(o.id, e.target.value);
+                          }
+                        }}
                         disabled={o.status === "gagal"}
                         className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
                       >
@@ -263,6 +273,15 @@ export default function PesananPage() {
                         <option value="selesai">Selesai</option>
                         {o.status === "gagal" && <option value="gagal">Dibatalkan</option>}
                       </select>
+                      {o.waybill_number && (
+                        <button
+                          onClick={() => setOrderUntukResi(o)}
+                          title="Klik buat ubah nomor resi"
+                          className="block text-[11px] text-[#8B8D85] font-mono mt-1 hover:text-[#D85A30] hover:underline"
+                        >
+                          Resi: {o.waybill_number}
+                        </button>
+                      )}
                     </td>
                   </tr>
                   );
@@ -273,7 +292,70 @@ export default function PesananPage() {
         </div>
       </div>
       </div>
+
+      {orderUntukResi && (
+        <ResiModal
+          order={orderUntukResi}
+          onClose={() => setOrderUntukResi(null)}
+          onSubmit={(waybillNumber) => {
+            updateStatus(orderUntukResi.id, "shipped", waybillNumber);
+            setOrderUntukResi(null);
+          }}
+        />
+      )}
     </main>
+  );
+}
+
+function ResiModal({ order, onClose, onSubmit }) {
+  const [waybillNumber, setWaybillNumber] = useState(order.waybill_number || "");
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    if (!waybillNumber.trim()) return;
+    onSubmit(waybillNumber.trim().toUpperCase());
+  }
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
+      <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-sm">
+        <div className="p-5 border-b border-[#E5E2D9]">
+          <h2 className="font-bold text-[#1C1C1A]">
+            {order.waybill_number ? "Ubah nomor resi" : "Masukin nomor resi"}
+          </h2>
+          <p className="text-xs text-[#8B8D85] mt-1">
+            Pesanan {order.product_name} · {order.courier || "Kurir belum tercatat"}
+          </p>
+        </div>
+        <form onSubmit={handleSubmit} className="p-5 space-y-4">
+          <div className="bg-[#FAECE7] text-[#712B13] text-xs px-3 py-2.5 rounded-lg">
+            Ambil nomor resi dari struk/label yang dikasih kurir pas kamu drop-off atau pas paket dijemput.
+          </div>
+          <div>
+            <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Nomor resi (AWB)</label>
+            <input
+              type="text"
+              required
+              autoFocus
+              value={waybillNumber}
+              onChange={(e) => setWaybillNumber(e.target.value.toUpperCase())}
+              placeholder="Contoh: JP1234567890"
+              className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm font-mono focus:outline-none focus:border-[#D85A30]"
+            />
+          </div>
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose}
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium border border-[#E5E2D9] text-[#5B6472] hover:bg-[#FAFAF7]">
+              Batal
+            </button>
+            <button type="submit"
+              className="flex-1 py-2.5 rounded-lg text-sm font-medium bg-[#D85A30] text-white hover:bg-[#B84A25]">
+              {order.waybill_number ? "Simpan" : "Tandai dikirim"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
   );
 }
 

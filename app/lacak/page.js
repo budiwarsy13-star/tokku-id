@@ -2,7 +2,7 @@
 
 import { useState, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
-import { Search, Package, CheckCircle2, Circle, Truck, PackageCheck, Clock } from "lucide-react";
+import { Search, Package, CheckCircle2, Circle, Truck, PackageCheck, Clock, ExternalLink } from "lucide-react";
 
 const TAHAPAN = [
   { key: "pending", label: "Pesanan dibuat", icon: Clock },
@@ -158,6 +158,19 @@ function LacakPesananContent() {
               </div>
             )}
 
+            {/* LACAK POSISI PAKET (muncul kalau udah ada nomor resi) */}
+            {result.waybillNumber && (result.status === "shipped" || result.status === "selesai") && (
+              <a
+                href={`https://cekresi.com/?noresi=${encodeURIComponent(result.waybillNumber)}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl font-medium mb-3 border border-[#E5E2D9] text-[#1C1C1A] hover:bg-[#FAFAF7] transition-colors"
+              >
+                <Truck size={16} /> Lacak posisi paket
+                <ExternalLink size={14} className="text-[#8B8D85]" />
+              </a>
+            )}
+
             {/* KONFIRMASI DITERIMA (cuma muncul kalau status "shipped") */}
             {result.status === "shipped" && (
               <div className="mb-6">
@@ -187,6 +200,7 @@ function LacakPesananContent() {
                 <p className="text-sm text-[#1C1C1A]">{result.fullAddress}</p>
                 <p className="text-sm text-[#8B8D85]">{result.destinationLabel}</p>
                 {result.courier && <p className="text-sm text-[#8B8D85] mt-1">Kurir: {result.courier}</p>}
+                {result.waybillNumber && <p className="text-sm text-[#8B8D85] font-mono">Resi: {result.waybillNumber}</p>}
               </div>
             )}
 

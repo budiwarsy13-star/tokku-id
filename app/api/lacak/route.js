@@ -43,6 +43,7 @@ export async function POST(request) {
         discountCode: order.discount_code,
         discountAmount: order.discount_amount,
         courier: order.courier,
+        waybillNumber: order.waybill_number,
         destinationLabel: order.destination_label,
         fullAddress: order.full_address,
         createdAt: order.created_at,
