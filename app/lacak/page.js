@@ -34,6 +34,13 @@ function LacakPesananContent() {
   const [error, setError] = useState("");
   const [confirming, setConfirming] = useState(false);
   const [confirmMsg, setConfirmMsg] = useState("");
+  const [resiLangsung, setResiLangsung] = useState("");
+
+  function handleLacakLangsung(e) {
+    e.preventDefault();
+    if (!resiLangsung.trim()) return;
+    window.open(`https://cekresi.com/?noresi=${encodeURIComponent(resiLangsung.trim())}`, "_blank");
+  }
 
   async function handleKonfirmasiDiterima() {
     if (!confirm("Pastikan barang udah kamu terima dalam kondisi baik. Konfirmasi sekarang?")) return;
@@ -105,6 +112,26 @@ function LacakPesananContent() {
             <Search size={16} /> {loading ? "Mencari..." : "Cari pesanan"}
           </button>
         </form>
+
+        {/* SHORTCUT: PUNYA NOMOR RESI, LACAK LANGSUNG (gak perlu Order ID/no HP,
+            karena posisi paket via kurir emang data publik) */}
+        <details className="mt-3 group">
+          <summary className="text-xs text-[#8B8D85] hover:text-[#D85A30] cursor-pointer text-center list-none flex items-center justify-center gap-1">
+            <Truck size={13} /> Udah punya nomor resi? Lacak posisi paket langsung
+          </summary>
+          <form onSubmit={handleLacakLangsung} className="flex gap-2 mt-3">
+            <input
+              type="text"
+              value={resiLangsung}
+              onChange={(e) => setResiLangsung(e.target.value)}
+              placeholder="Nomor resi dari kurir"
+              className="flex-1 px-3 py-2 border border-[#E5E2D9] rounded-lg text-sm font-mono focus:outline-none focus:border-[#D85A30]"
+            />
+            <button type="submit" className="px-4 py-2 bg-[#1C1C1A] text-white rounded-lg text-sm hover:bg-[#333] transition-colors flex items-center gap-1.5">
+              Lacak <ExternalLink size={13} />
+            </button>
+          </form>
+        </details>
 
         {result && (
           <div className="bg-white rounded-2xl border border-[#E5E2D9] p-6 mt-4">

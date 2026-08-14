@@ -1,13 +1,19 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { X, Upload, Video } from "lucide-react";
 
-export default function TambahProduk() {
+export default function EditProduk() {
+  const params = useParams();
+  const productId = params.id;
+
   const [store, setStore] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [notFound, setNotFound] = useState(false);
 
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
@@ -35,10 +41,30 @@ export default function TambahProduk() {
       const { data: storeData } = await supabase.from("stores").select("*").eq("user_id", user.id).maybeSingle();
       if (!storeData) { window.location.href = "/dashboard"; return; }
       setStore(storeData);
+
+      const { data: product } = await supabase.from("products").select("*").eq("id", productId).eq("store_id", storeData.id).maybeSingle();
+      if (!product) { setNotFound(true); setLoading(false); return; }
+
+      setName(product.name || "");
+      setDescription(product.description || "");
+      setCategory(product.category || "");
+      setSku(product.sku || "");
+      setWeight(String(product.weight || 500));
+      setImages(product.images || []);
+      setVideoUrl(product.video_url || "");
+
+      if (product.variants && product.variants.length > 0) {
+        setAdaVarian(true);
+        setVariants(product.variants.map((v) => ({ name: v.name || "", sku: v.sku || "", price: String(v.price || ""), stock: String(v.stock || "") })));
+      } else {
+        setPrice(String(product.price || ""));
+        setStock(String(product.stock || ""));
+      }
+
       setLoading(false);
     }
     init();
-  }, []);
+  }, [productId]);
 
   async function uploadFile(file, storeId) {
     const ext = file.name.split(".").pop();
@@ -55,10 +81,7 @@ export default function TambahProduk() {
     setUploadingPhoto(true);
     try {
       const urls = [];
-      for (const file of files) {
-        const url = await uploadFile(file, store.id);
-        urls.push(url);
-      }
+      for (const file of files) urls.push(await uploadFile(file, store.id));
       setImages((prev) => [...prev, ...urls]);
     } catch (err) {
       alert("Gagal upload foto: " + err.message);
@@ -76,8 +99,7 @@ export default function TambahProduk() {
     if (!file) return;
     setUploadingVideo(true);
     try {
-      const url = await uploadFile(file, store.id);
-      setVideoUrl(url);
+      setVideoUrl(await uploadFile(file, store.id));
     } catch (err) {
       alert("Gagal upload video: " + err.message);
     }
@@ -102,13 +124,12 @@ export default function TambahProduk() {
   async function handleSubmit(e) {
     e.preventDefault();
     if (images.length === 0) {
-      alert("Tambahin minimal 1 foto produk dulu ya.");
+      alert("Produk minimal harus punya 1 foto.");
       return;
     }
     setSaving(true);
 
     const payload = {
-      store_id: store.id,
       name,
       description,
       category,
@@ -123,15 +144,33 @@ export default function TambahProduk() {
         : [],
     };
 
-    const { error } = await supabase.from("products").insert(payload);
+    const { error } = await supabase.from("products").update(payload).eq("id", productId);
     setSaving(false);
 
-    if (error) alert("Gagal simpan produk: " + error.message);
+    if (error) alert("Gagal simpan perubahan: " + error.message);
+    else window.location.href = "/dashboard/produk";
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Yakin mau hapus produk "${name}"? Produk yang udah pernah dipesan tetap aman di riwayat pesanan, tapi produk ini gak akan muncul lagi di toko.`)) return;
+    setDeleting(true);
+    const { error } = await supabase.from("products").delete().eq("id", productId);
+    setDeleting(false);
+    if (error) alert("Gagal hapus produk: " + error.message);
     else window.location.href = "/dashboard/produk";
   }
 
   if (loading) {
     return <main className="min-h-screen bg-[#FAFAF7] flex items-center justify-center"><p className="text-[#8B8D85]">Memuat...</p></main>;
+  }
+
+  if (notFound) {
+    return (
+      <main className="min-h-screen bg-[#FAFAF7] flex flex-col items-center justify-center gap-3">
+        <p className="text-[#8B8D85]">Produk gak ketemu.</p>
+        <a href="/dashboard/produk" className="text-sm text-[#D85A30] hover:underline">Balik ke daftar produk</a>
+      </main>
+    );
   }
 
   return (
@@ -144,35 +183,36 @@ export default function TambahProduk() {
       </nav>
 
       <div className="max-w-xl mx-auto px-6 py-10">
-        <h1 className="text-2xl font-bold text-[#1C1C1A] mb-6">Tambah produk</h1>
+        <div className="flex items-center justify-between mb-6">
+          <h1 className="text-2xl font-bold text-[#1C1C1A]">Edit produk</h1>
+          <button onClick={handleDelete} disabled={deleting} className="text-sm text-[#A32D2D] hover:underline disabled:opacity-50">
+            {deleting ? "Menghapus..." : "Hapus produk"}
+          </button>
+        </div>
 
         <form onSubmit={handleSubmit} className="space-y-5 bg-white rounded-xl border border-[#E5E2D9] p-6">
           <div>
             <label className="text-sm text-[#5B6472] block mb-1">Nama produk</label>
             <input type="text" required value={name} onChange={(e) => setName(e.target.value)}
-              className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]"
-              placeholder="Kaos Oversize Polos" />
+              className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
           </div>
 
           <div>
             <label className="text-sm text-[#5B6472] block mb-1">Deskripsi</label>
             <textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={4}
-              className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]"
-              placeholder="Bahan katun combed 24s, adem dan gak gampang melar. Jelasin detail material, ukuran, cara rawat, dll." />
+              className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
           </div>
 
           <div className="grid grid-cols-2 gap-4">
             <div>
               <label className="text-sm text-[#5B6472] block mb-1">Kategori</label>
               <input type="text" value={category} onChange={(e) => setCategory(e.target.value)}
-                className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]"
-                placeholder="Pakaian Pria" />
+                className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
             </div>
             <div>
               <label className="text-sm text-[#5B6472] block mb-1">SKU induk (opsional)</label>
               <input type="text" value={sku} onChange={(e) => setSku(e.target.value)}
-                className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]"
-                placeholder="MRK-OVS-001" />
+                className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
             </div>
           </div>
 
@@ -181,8 +221,7 @@ export default function TambahProduk() {
               Berat produk (gram) <span className="text-[#8B8D85] font-normal">— dipakai buat hitung ongkir</span>
             </label>
             <input type="number" required min="1" value={weight} onChange={(e) => setWeight(e.target.value)}
-              className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]"
-              placeholder="500" />
+              className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
           </div>
 
           <div>
@@ -205,7 +244,6 @@ export default function TambahProduk() {
               </button>
             </div>
             <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoSelect} />
-            <p className="text-xs text-[#8B8D85] mt-2">Foto pertama jadi foto utama. Bisa upload beberapa sekaligus.</p>
           </div>
 
           <div>
@@ -234,12 +272,12 @@ export default function TambahProduk() {
               <div>
                 <label className="text-sm text-[#5B6472] block mb-1">Harga</label>
                 <input type="number" required value={price} onChange={(e) => setPrice(e.target.value)}
-                  className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" placeholder="150000" />
+                  className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
               </div>
               <div>
                 <label className="text-sm text-[#5B6472] block mb-1">Stok</label>
                 <input type="number" required value={stock} onChange={(e) => setStock(e.target.value)}
-                  className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" placeholder="20" />
+                  className="w-full px-4 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
               </div>
             </div>
           ) : (
@@ -266,7 +304,7 @@ export default function TambahProduk() {
 
           <button type="submit" disabled={saving || uploadingPhoto || uploadingVideo}
             className="w-full py-3 bg-[#D85A30] text-white rounded-lg font-medium hover:bg-[#B84A25] transition-colors disabled:opacity-50">
-            {saving ? "Menyimpan..." : "Simpan produk"}
+            {saving ? "Menyimpan..." : "Simpan perubahan"}
           </button>
         </form>
       </div>

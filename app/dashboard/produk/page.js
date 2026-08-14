@@ -83,7 +83,8 @@ export default function ProdukPage() {
           ) : (
             <div className="space-y-3">
               {products.map((p) => (
-                <div key={p.id} className="flex items-center gap-3 border border-[#E5E2D9] rounded-lg p-3">
+                <a key={p.id} href={`/dashboard/produk/edit/${p.id}`}
+                  className="flex items-center gap-3 border border-[#E5E2D9] rounded-lg p-3 hover:border-[#D85A30] transition-colors">
                   <div className="w-12 h-12 rounded-lg bg-[#F1EFE8] flex-shrink-0 overflow-hidden">
                     {p.images?.[0] && <img src={p.images[0]} alt={p.name} className="w-full h-full object-cover" />}
                   </div>
@@ -91,7 +92,8 @@ export default function ProdukPage() {
                     <p className="text-sm font-medium text-[#1C1C1A]">{p.name}</p>
                     <p className="text-xs text-[#8B8D85]">Rp{Number(p.price).toLocaleString("id-ID")} · Stok {p.stock}</p>
                   </div>
-                </div>
+                  <span className="text-xs text-[#D85A30] font-medium">Edit</span>
+                </a>
               ))}
             </div>
           )}
