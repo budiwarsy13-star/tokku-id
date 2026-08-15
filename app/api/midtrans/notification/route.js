@@ -1,5 +1,6 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
+import { kirimPush } from "@/lib/push-server";
 
 // Pakai service role di sini karena ini request server-to-server dari Midtrans,
 // bukan dari browser user, jadi butuh akses penuh buat update tabel orders.
@@ -122,6 +123,13 @@ export async function POST(request) {
           type: "pembayaran_masuk",
           title: "Pembayaran diterima",
           message: `Pembayaran untuk ${updatedOrder.product_name} sebesar Rp${Number(updatedOrder.total_price).toLocaleString("id-ID")} sudah masuk.`,
+        });
+
+        await kirimPush(supabaseAdmin, updatedOrder.store_id, {
+          title: "Pembayaran diterima",
+          message: `Rp${Number(updatedOrder.total_price).toLocaleString("id-ID")} dari ${updatedOrder.buyer_name} untuk ${updatedOrder.product_name}.`,
+          url: "/dashboard/pesanan",
+          orderId: updatedOrder.id,
         });
 
         // Ambil kredensial tracking toko ini, terus kirim event Purchase server-side

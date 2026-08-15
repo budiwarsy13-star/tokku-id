@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { kirimPush } from "@/lib/push-server";
 
 // Konfirmasi "pesanan diterima" dari sisi pembeli. Verifikasi ulang Order ID +
 // nomor WA (sama kayak /api/lacak) biar cuma pemilik pesanan yang bisa
@@ -48,6 +49,13 @@ export async function POST(request) {
       type: "pesanan_selesai",
       title: "Pesanan selesai",
       message: `${order.buyer_name} sudah konfirmasi pesanan ${order.product_name} diterima.`,
+    });
+
+    await kirimPush(supabaseAdmin, order.store_id, {
+      title: "Pesanan selesai ✅",
+      message: `${order.buyer_name} udah konfirmasi ${order.product_name} diterima.`,
+      url: "/dashboard/pesanan",
+      orderId: order.id,
     });
 
     return Response.json({ success: true, completedAt });

@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import OnboardingGuide from "@/components/OnboardingGuide";
+import PushOptIn from "@/components/PushOptIn";
 import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Wallet, TrendingUp, Tag } from "lucide-react";
 
 function persenPerubahan(sekarang, kemarin) {
@@ -292,6 +293,7 @@ function DashboardShell({ store }) {
         </header>
 
         <div className="p-8 max-w-5xl">
+          <PushOptIn />
           <OnboardingGuide store={store} />
 
           {/* STAT CARDS */}

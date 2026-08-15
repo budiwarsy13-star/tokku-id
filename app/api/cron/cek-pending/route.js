@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { kirimPush } from "@/lib/push-server";
 
 // Dipanggil otomatis tiap jam oleh Vercel Cron (lihat vercel.json).
 // Tugasnya: cari order yang udah dibayar (paid) tapi belum dikirim (shipped)
@@ -40,6 +41,13 @@ export async function GET(request) {
       type: "order_pending",
       title: "Pesanan harus segera dikirim",
       message: `Pesanan ${order.product_name} dari ${order.buyer_name} sudah dibayar lebih dari 24 jam dan belum dikirim.`,
+    });
+
+    await kirimPush(supabaseAdmin, order.store_id, {
+      title: "⚠️ Pesanan harus segera dikirim",
+      message: `${order.product_name} dari ${order.buyer_name} udah lewat 24 jam belum dikirim.`,
+      url: "/dashboard/pesanan",
+      orderId: order.id,
     });
 
     await supabaseAdmin
