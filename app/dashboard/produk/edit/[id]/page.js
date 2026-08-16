@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import DashboardLayout from "@/components/DashboardLayout";
 import { X, Upload, Video } from "lucide-react";
 
 export default function EditProduk() {
@@ -174,15 +175,8 @@ export default function EditProduk() {
   }
 
   return (
-    <main className="min-h-screen bg-[#FAFAF7] font-[family-name:var(--font-baloo)]">
-      <nav className="flex items-center justify-between px-6 py-4 border-b border-[#E5E2D9] bg-white">
-        <a href="/dashboard" className="font-bold text-xl tracking-tight text-[#1C1C1A]">
-          tok<span className="text-[#D85A30]">k</span>u<span className="text-[#8B8D85] font-normal">.id</span>
-        </a>
-        <a href="/dashboard/produk" className="text-sm text-[#5B6472] hover:text-[#1C1C1A]">Batal</a>
-      </nav>
-
-      <div className="max-w-xl mx-auto px-6 py-10">
+    <DashboardLayout store={store} activeMenu="/dashboard/produk" headerTitle="Edit produk">
+            <div className="max-w-xl mx-auto px-6 py-10">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-bold text-[#1C1C1A]">Edit produk</h1>
           <button onClick={handleDelete} disabled={deleting} className="text-sm text-[#A32D2D] hover:underline disabled:opacity-50">
@@ -308,6 +302,6 @@ export default function EditProduk() {
           </button>
         </form>
       </div>
-    </main>
+    </DashboardLayout>
   );
 }

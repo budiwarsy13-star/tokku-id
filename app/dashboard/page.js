@@ -2,10 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import NotificationBell from "@/components/NotificationBell";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import PushOptIn from "@/components/PushOptIn";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Wallet, TrendingUp, Tag } from "lucide-react";
+import { Package, ShoppingBag, Wallet, TrendingUp } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
 
 function persenPerubahan(sekarang, kemarin) {
   if (kemarin === 0) return sekarang > 0 ? 100 : 0;
@@ -134,6 +134,7 @@ export default function Dashboard() {
 }
 
 function DashboardShell({ store }) {
+
   const [stats, setStats] = useState({ totalOrder: 0, totalPendapatan: 0, totalProduk: 0, produkTerlaris: [] });
   const [loadingStats, setLoadingStats] = useState(true);
   const [trenMingguan, setTrenMingguan] = useState([]);
@@ -237,67 +238,23 @@ function DashboardShell({ store }) {
     paid: { label: "Dibayar", className: "bg-[#EAF3DE] text-[#3B6D11]" },
   };
 
-  const menuItems = [
-    { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard", active: true },
-    { icon: Package, label: "Produk", href: "/dashboard/produk" },
-    { icon: ShoppingBag, label: "Pesanan", href: "/dashboard/pesanan" },
-    { icon: Tag, label: "Diskon", href: "/dashboard/diskon" },
-    { icon: Store, label: "Pengaturan toko", href: "/dashboard/toko" },
-  ];
+
+  const statusBadge = {
+    pending: { label: "Menunggu bayar", className: "bg-[#F1EFE8] text-[#5B6472]" },
+    paid: { label: "Dibayar", className: "bg-[#EAF3DE] text-[#3B6D11]" },
+  };
 
   return (
-    <main className="min-h-screen bg-[#FAFAF7] font-[family-name:var(--font-baloo)] flex">
-      {/* SIDEBAR */}
-      <aside className="w-60 bg-white border-r border-[#E5E2D9] flex flex-col fixed h-screen">
-        <div className="px-6 py-5 border-b border-[#E5E2D9]">
-          <span className="font-bold text-xl tracking-tight text-[#1C1C1A]">
-            tok<span className="text-[#D85A30]">k</span>u<span className="text-[#8B8D85] font-normal">.id</span>
-          </span>
-        </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {menuItems.map((item) => (
-            <a key={item.label} href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                item.active ? "bg-[#FAECE7] text-[#D85A30] font-medium" : "text-[#5B6472] hover:bg-[#F1EFE8]"
-              }`}>
-              <item.icon size={18} strokeWidth={1.75} />
-              {item.label}
-            </a>
-          ))}
-        </nav>
-        <div className="px-3 py-4 border-t border-[#E5E2D9]">
-          <button
-            onClick={async () => { await supabase.auth.signOut(); window.location.href = "/"; }}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#5B6472] hover:bg-[#F1EFE8] w-full transition-colors"
-          >
-            <LogOut size={18} strokeWidth={1.75} />
-            Keluar
-          </button>
-        </div>
-      </aside>
+    <DashboardLayout store={store} activeMenu="/dashboard">
+      <div className="max-w-5xl">
+        <PushOptIn />
+        <OnboardingGuide store={store} />
 
-      {/* MAIN CONTENT */}
-      <div className="flex-1 ml-60">
-        <header className="bg-white border-b border-[#E5E2D9] px-8 py-4 flex items-center justify-between">
-          <div>
-            <p className="text-xs text-[#8B8D85]">Toko kamu</p>
-            <h1 className="font-bold text-[#1C1C1A]">{store.name}</h1>
-          </div>
-          <div className="flex items-center gap-3">
-            <a href={`https://tokku.id/${store.slug}`} target="_blank"
-              className="text-sm text-[#D85A30] bg-[#FAECE7] px-3 py-1.5 rounded-lg">
-              tokku.id/{store.slug}
-            </a>
-            <NotificationBell storeId={store.id} />
-          </div>
-        </header>
-
-        <div className="p-8 max-w-5xl">
           <PushOptIn />
           <OnboardingGuide store={store} />
 
           {/* STAT CARDS */}
-          <div className="grid grid-cols-3 gap-4 mb-6">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-[#E5E2D9] p-5">
               <div className="flex items-center gap-2 text-[#8B8D85] text-xs mb-2">
                 <Wallet size={14} /> Total pendapatan
@@ -329,7 +286,7 @@ function DashboardShell({ store }) {
             {!performa ? (
               <p className="text-sm text-[#8B8D85]">Memuat...</p>
             ) : (
-              <div className="grid grid-cols-5 gap-4">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
                 <PerformaItem label="Penjualan" value={`Rp${performa.penjualan.toLocaleString("id-ID")}`} delta={performa.penjualanDelta} />
                 <PerformaItem label="Total pengunjung" value={performa.pengunjung} delta={performa.pengunjungDelta} />
                 <PerformaItem label="Produk diklik" value={performa.klik} delta={performa.klikDelta} />
@@ -373,7 +330,7 @@ function DashboardShell({ store }) {
             )}
           </div>
 
-          <div className="grid grid-cols-2 gap-4 mb-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
             {/* STOK MENIPIS */}
             <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">
               <div className="flex items-center gap-2 mb-4">
@@ -456,7 +413,6 @@ function DashboardShell({ store }) {
             )}
           </div>
         </div>
-      </div>
-    </main>
+    </DashboardLayout>
   );
 }

@@ -2,8 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
-import NotificationBell from "@/components/NotificationBell";
-import { LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag, Plus, Trash2, X } from "lucide-react";
+import DashboardLayout from "@/components/DashboardLayout";
+
 
 export default function DiskonPage() {
   const [store, setStore] = useState(null);
@@ -41,13 +41,6 @@ export default function DiskonPage() {
     fetchCodes(store.id);
   }
 
-  const menuItems = [
-    { icon: LayoutDashboard, label: "Ringkasan", href: "/dashboard" },
-    { icon: Package, label: "Produk", href: "/dashboard/produk" },
-    { icon: ShoppingBag, label: "Pesanan", href: "/dashboard/pesanan" },
-    { icon: Tag, label: "Diskon", href: "/dashboard/diskon", active: true },
-    { icon: Store, label: "Pengaturan toko", href: "/dashboard/toko" },
-  ];
 
   if (loading) return (
     <main className="min-h-screen bg-[#FAFAF7] flex items-center justify-center">
@@ -56,33 +49,8 @@ export default function DiskonPage() {
   );
 
   return (
-    <main className="min-h-screen bg-[#FAFAF7] flex">
-      <aside className="w-60 bg-white border-r border-[#E5E2D9] flex flex-col fixed h-screen">
-        <div className="px-6 py-5 border-b border-[#E5E2D9]">
-          <span className="font-bold text-xl tracking-tight text-[#1C1C1A]">
-            tok<span className="text-[#D85A30]">k</span>u<span className="text-[#8B8D85] font-normal">.id</span>
-          </span>
-        </div>
-        <nav className="flex-1 px-3 py-4 space-y-1">
-          {menuItems.map((item) => (
-            <a key={item.label} href={item.href}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm transition-colors ${
-                item.active ? "bg-[#FAECE7] text-[#D85A30] font-medium" : "text-[#5B6472] hover:bg-[#F1EFE8]"
-              }`}>
-              <item.icon size={18} strokeWidth={1.75} />
-              {item.label}
-            </a>
-          ))}
-        </nav>
-        <div className="px-3 py-4 border-t border-[#E5E2D9]">
-          <button onClick={async () => { await supabase.auth.signOut(); window.location.href = "/"; }}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm text-[#5B6472] hover:bg-[#F1EFE8] w-full">
-            <LogOut size={18} strokeWidth={1.75} /> Keluar
-          </button>
-        </div>
-      </aside>
+    <DashboardLayout store={store} activeMenu="/dashboard/diskon" headerTitle="Diskon">
 
-      <div className="flex-1 ml-60 p-8 max-w-3xl">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-[#1C1C1A]">Kode diskon</h1>
           <div className="flex items-center gap-3">
@@ -146,7 +114,7 @@ export default function DiskonPage() {
           onSaved={() => { setShowForm(false); fetchCodes(store.id); }}
         />
       )}
-    </main>
+    </DashboardLayout>
   );
 }
 

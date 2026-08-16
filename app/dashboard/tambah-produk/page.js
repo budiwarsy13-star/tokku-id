@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
+import DashboardLayout from "@/components/DashboardLayout";
 import { X, Upload, Video } from "lucide-react";
 
 export default function TambahProduk() {
@@ -135,15 +136,8 @@ export default function TambahProduk() {
   }
 
   return (
-    <main className="min-h-screen bg-[#FAFAF7] font-[family-name:var(--font-baloo)]">
-      <nav className="flex items-center justify-between px-6 py-4 border-b border-[#E5E2D9] bg-white">
-        <a href="/dashboard" className="font-bold text-xl tracking-tight text-[#1C1C1A]">
-          tok<span className="text-[#D85A30]">k</span>u<span className="text-[#8B8D85] font-normal">.id</span>
-        </a>
-        <a href="/dashboard/produk" className="text-sm text-[#5B6472] hover:text-[#1C1C1A]">Batal</a>
-      </nav>
-
-      <div className="max-w-xl mx-auto px-6 py-10">
+    <DashboardLayout store={store} activeMenu="/dashboard/produk" headerTitle="Tambah produk">
+            <div className="max-w-xl mx-auto px-6 py-10">
         <h1 className="text-2xl font-bold text-[#1C1C1A] mb-6">Tambah produk</h1>
 
         <form onSubmit={handleSubmit} className="space-y-5 bg-white rounded-xl border border-[#E5E2D9] p-6">
@@ -270,6 +264,6 @@ export default function TambahProduk() {
           </button>
         </form>
       </div>
-    </main>
+    </DashboardLayout>
   );
 }
