@@ -34,27 +34,42 @@ export async function GET(request) {
     return Response.json({ message: "Tidak ada order yang melewati batas waktu.", count: 0 });
   }
 
+  // Kelompokkan per midtrans_order_id — 1 transaksi cart bisa punya beberapa
+  // baris order (beberapa produk), tapi cuma butuh 1 notifikasi reminder.
+  const grup = {};
   for (const order of overdueOrders) {
+    const key = order.midtrans_order_id || order.id;
+    if (!grup[key]) grup[key] = [];
+    grup[key].push(order);
+  }
+
+  for (const key of Object.keys(grup)) {
+    const rows = grup[key];
+    const first = rows[0];
+    const ringkasanProduk = rows.length === 1
+      ? first.product_name
+      : `${first.product_name} + ${rows.length - 1} produk lainnya`;
+
     await supabaseAdmin.from("notifications").insert({
-      store_id: order.store_id,
-      order_id: order.id,
+      store_id: first.store_id,
+      order_id: first.id,
       type: "order_pending",
       title: "Pesanan harus segera dikirim",
-      message: `Pesanan ${order.product_name} dari ${order.buyer_name} sudah dibayar lebih dari 24 jam dan belum dikirim.`,
+      message: `Pesanan ${ringkasanProduk} dari ${first.buyer_name} sudah dibayar lebih dari 24 jam dan belum dikirim.`,
     });
 
-    await kirimPush(supabaseAdmin, order.store_id, {
+    await kirimPush(supabaseAdmin, first.store_id, {
       title: "⚠️ Pesanan harus segera dikirim",
-      message: `${order.product_name} dari ${order.buyer_name} udah lewat 24 jam belum dikirim.`,
+      message: `${ringkasanProduk} dari ${first.buyer_name} udah lewat 24 jam belum dikirim.`,
       url: "/dashboard/pesanan",
-      orderId: order.id,
+      orderId: first.id,
     });
 
     await supabaseAdmin
       .from("orders")
       .update({ shipping_deadline_notified: true })
-      .eq("id", order.id);
+      .eq("midtrans_order_id", key);
   }
 
-  return Response.json({ message: "Notifikasi terkirim.", count: overdueOrders.length });
+  return Response.json({ message: "Notifikasi terkirim.", count: Object.keys(grup).length });
 }

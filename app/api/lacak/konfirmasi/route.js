@@ -20,17 +20,18 @@ export async function POST(request) {
       return Response.json({ success: false, message: "Data gak lengkap." }, { status: 400 });
     }
 
-    const { data: order } = await supabaseAdmin
+    const { data: rows } = await supabaseAdmin
       .from("orders")
       .select("*")
-      .eq("midtrans_order_id", orderId.trim().toUpperCase())
-      .maybeSingle();
+      .eq("midtrans_order_id", orderId.trim().toUpperCase());
 
-    if (!order || normalisasiTelepon(order.buyer_phone) !== normalisasiTelepon(buyerPhone)) {
+    const first = rows?.[0];
+
+    if (!first || normalisasiTelepon(first.buyer_phone) !== normalisasiTelepon(buyerPhone)) {
       return Response.json({ success: false, message: "Pesanan gak ketemu." }, { status: 404 });
     }
 
-    if (order.status !== "shipped") {
+    if (first.status !== "shipped") {
       return Response.json({
         success: false,
         message: "Pesanan ini belum berstatus 'Dikirim', jadi belum bisa dikonfirmasi diterima.",
@@ -41,21 +42,25 @@ export async function POST(request) {
     await supabaseAdmin
       .from("orders")
       .update({ status: "selesai", completed_at: completedAt })
-      .eq("id", order.id);
+      .eq("midtrans_order_id", first.midtrans_order_id);
+
+    const ringkasanProduk = rows.length === 1
+      ? first.product_name
+      : `${first.product_name} + ${rows.length - 1} produk lainnya`;
 
     await supabaseAdmin.from("notifications").insert({
-      store_id: order.store_id,
-      order_id: order.id,
+      store_id: first.store_id,
+      order_id: first.id,
       type: "pesanan_selesai",
       title: "Pesanan selesai",
-      message: `${order.buyer_name} sudah konfirmasi pesanan ${order.product_name} diterima.`,
+      message: `${first.buyer_name} sudah konfirmasi pesanan ${ringkasanProduk} diterima.`,
     });
 
-    await kirimPush(supabaseAdmin, order.store_id, {
+    await kirimPush(supabaseAdmin, first.store_id, {
       title: "Pesanan selesai ✅",
-      message: `${order.buyer_name} udah konfirmasi ${order.product_name} diterima.`,
+      message: `${first.buyer_name} udah konfirmasi ${ringkasanProduk} diterima.`,
       url: "/dashboard/pesanan",
-      orderId: order.id,
+      orderId: first.id,
     });
 
     return Response.json({ success: true, completedAt });

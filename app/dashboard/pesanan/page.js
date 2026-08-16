@@ -47,8 +47,11 @@ export default function PesananPage() {
     init();
   }, []);
 
-  async function updateStatus(orderId, newStatus, waybillNumber) {
-    const order = orders.find((o) => o.id === orderId);
+  async function updateStatus(rowId, newStatus, waybillNumber) {
+    const order = orders.find((o) => o.id === rowId);
+    if (!order) return;
+    const groupKey = order.midtrans_order_id;
+
     const updateData = { status: newStatus };
     if (newStatus === "shipped") {
       updateData.shipped_at = new Date().toISOString();
@@ -56,24 +59,32 @@ export default function PesananPage() {
     }
     if (newStatus === "selesai") updateData.completed_at = new Date().toISOString();
 
-    await supabase.from("orders").update(updateData).eq("id", orderId);
-    setOrders(orders.map((o) => (o.id === orderId ? { ...o, ...updateData } : o)));
+    // Update SEMUA baris yang share midtrans_order_id yang sama — soalnya kalau
+    // pembeli checkout beberapa produk sekaligus dari cart, itu 1 paket fisik yang
+    // dikirim bareng, jadi statusnya (dan nomor resi) harus konsisten semua baris.
+    await supabase.from("orders").update(updateData).eq("midtrans_order_id", groupKey);
+    setOrders(orders.map((o) => (o.midtrans_order_id === groupKey ? { ...o, ...updateData } : o)));
+
+    const anggotaGrup = orders.filter((o) => o.midtrans_order_id === groupKey);
+    const ringkasanProduk = anggotaGrup.length <= 1
+      ? order.product_name
+      : `${order.product_name} + ${anggotaGrup.length - 1} produk lainnya`;
 
     if (newStatus === "shipped") {
       await buatNotifikasi(supabase, {
         storeId: store.id,
-        orderId,
+        orderId: rowId,
         type: "delivery_update",
         title: "Status pengiriman diperbarui",
-        message: `Pesanan ${order.product_name} sudah ditandai dikirim.`,
+        message: `Pesanan ${ringkasanProduk} sudah ditandai dikirim.`,
       });
     } else if (newStatus === "selesai") {
       await buatNotifikasi(supabase, {
         storeId: store.id,
-        orderId,
+        orderId: rowId,
         type: "pesanan_selesai",
         title: "Pesanan selesai",
-        message: `Pesanan ${order.product_name} sudah ditandai selesai diterima pembeli.`,
+        message: `Pesanan ${ringkasanProduk} sudah ditandai selesai diterima pembeli.`,
       });
     }
   }

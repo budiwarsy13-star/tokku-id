@@ -5,8 +5,9 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { buatNotifikasi } from "@/lib/notifications";
 import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent } from "@/lib/tracking";
+import { getCart, addToCart, updateCartQty, removeFromCart, clearCart, cartTotalItems, cartSubtotal, cartTotalWeight } from "@/lib/cart";
 import PromoCarousel from "@/components/PromoCarousel";
-import { ShoppingCart, X, Search, Truck } from "lucide-react";
+import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2 } from "lucide-react";
 
 export default function TokoPublik() {
   const { slug } = useParams();
@@ -16,6 +17,13 @@ export default function TokoPublik() {
   const [notFound, setNotFound] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
   const [banners, setBanners] = useState([]);
+  const [cart, setCart] = useState([]);
+  const [cartOpen, setCartOpen] = useState(false);
+  const [checkoutOpen, setCheckoutOpen] = useState(false);
+
+  function refreshCart() {
+    setCart(getCart(slug));
+  }
 
   useEffect(() => {
     async function fetchStore() {
@@ -36,6 +44,7 @@ export default function TokoPublik() {
       catatEvent(supabase, storeData.id, "view_toko");
     }
     fetchStore();
+    setCart(getCart(slug));
   }, [slug]);
 
   useEffect(() => {
@@ -155,11 +164,59 @@ export default function TokoPublik() {
       </div>
 
       {selectedProduct && (
-        <CheckoutModal
+        <ProductModal
           product={selectedProduct}
           store={store}
           accent={accent}
           onClose={() => setSelectedProduct(null)}
+          onAddToCart={(variant, qty) => {
+            addToCart(slug, selectedProduct, variant, qty);
+            refreshCart();
+            setSelectedProduct(null);
+            setCartOpen(true);
+          }}
+          onBuyNow={(variant, qty) => {
+            addToCart(slug, selectedProduct, variant, qty);
+            refreshCart();
+            setSelectedProduct(null);
+            setCheckoutOpen(true);
+          }}
+        />
+      )}
+
+      {/* TOMBOL CART MELAYANG */}
+      {cart.length > 0 && !cartOpen && !checkoutOpen && (
+        <button
+          onClick={() => setCartOpen(true)}
+          className="fixed bottom-6 right-6 z-40 flex items-center gap-2 px-5 py-3.5 rounded-full text-white font-medium shadow-lg hover:opacity-90 transition-opacity"
+          style={{ background: accent }}
+        >
+          <ShoppingCart size={18} />
+          Keranjang
+          <span className="bg-white/25 rounded-full w-5 h-5 flex items-center justify-center text-xs font-bold">
+            {cartTotalItems(cart)}
+          </span>
+        </button>
+      )}
+
+      {cartOpen && (
+        <CartDrawer
+          cart={cart}
+          accent={accent}
+          onClose={() => setCartOpen(false)}
+          onUpdateQty={(key, qty) => { updateCartQty(slug, key, qty); refreshCart(); }}
+          onRemove={(key) => { removeFromCart(slug, key); refreshCart(); }}
+          onCheckout={() => { setCartOpen(false); setCheckoutOpen(true); }}
+        />
+      )}
+
+      {checkoutOpen && cart.length > 0 && (
+        <CartCheckoutModal
+          items={cart}
+          store={store}
+          accent={accent}
+          onClose={() => setCheckoutOpen(false)}
+          onOrderComplete={() => { clearCart(slug); refreshCart(); }}
         />
       )}
 
@@ -175,14 +232,165 @@ export default function TokoPublik() {
   );
 }
 
-function CheckoutModal({ product, store, accent, onClose }) {
-  const [buyerName, setBuyerName] = useState("");
-  const [buyerPhone, setBuyerPhone] = useState("");
-  const [buyerEmail, setBuyerEmail] = useState("");
+function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants?.length > 0 ? product.variants[0] : null
   );
+  const unitPrice = selectedVariant ? selectedVariant.price : product.price;
+  const stok = selectedVariant ? selectedVariant.stock : product.stock;
+  const habis = stok !== undefined && stok !== null && stok <= 0;
+
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
+      <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between p-4 border-b border-[#E5E2D9] sticky top-0 bg-white z-10">
+          <h2 className="font-bold text-[#1C1C1A]">Detail produk</h2>
+          <button onClick={onClose} className="text-[#8B8D85] hover:text-[#1C1C1A]"><X size={20} /></button>
+        </div>
+
+        <div className="p-4 space-y-4">
+          <div className="aspect-square rounded-xl overflow-hidden" style={{ background: `${accent}11` }}>
+            {product.images?.[0] ? (
+              <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full flex items-center justify-center text-5xl opacity-20">👕</div>
+            )}
+          </div>
+
+          <div>
+            <p className="font-bold text-[#1C1C1A] text-lg">{product.name}</p>
+            <p className="text-lg font-black mt-0.5" style={{ color: accent }}>
+              Rp{Number(unitPrice).toLocaleString("id-ID")}
+            </p>
+            {product.description && (
+              <p className="text-sm text-[#5B6472] mt-2 leading-relaxed">{product.description}</p>
+            )}
+          </div>
+
+          {product.variants?.length > 0 && (
+            <div>
+              <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Varian</label>
+              <select value={selectedVariant?.name}
+                onChange={(e) => { setSelectedVariant(product.variants.find((v) => v.name === e.target.value)); setQuantity(1); }}
+                className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none">
+                {product.variants.map((v) => (
+                  <option key={v.name} value={v.name} disabled={v.stock <= 0}>
+                    {v.name} — Rp{Number(v.price).toLocaleString("id-ID")} {v.stock <= 0 ? "(Habis)" : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {habis ? (
+            <p className="text-sm text-[#A32D2D] bg-[#FBEAEA] px-3 py-2.5 rounded-lg text-center">Stok varian ini lagi habis.</p>
+          ) : (
+            <div>
+              <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Jumlah</label>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setQuantity((q) => Math.max(1, q - 1))}
+                  className="w-9 h-9 rounded-lg border border-[#E5E2D9] flex items-center justify-center hover:bg-[#FAFAF7]">
+                  <Minus size={14} />
+                </button>
+                <span className="w-8 text-center font-medium">{quantity}</span>
+                <button type="button" onClick={() => setQuantity((q) => Math.min(stok ?? 999, q + 1))}
+                  className="w-9 h-9 rounded-lg border border-[#E5E2D9] flex items-center justify-center hover:bg-[#FAFAF7]">
+                  <Plus size={14} />
+                </button>
+                {stok !== undefined && stok !== null && (
+                  <span className="text-xs text-[#8B8D85] ml-1">Stok {stok}</span>
+                )}
+              </div>
+            </div>
+          )}
+
+          <div className="flex gap-2 pt-2">
+            <button type="button" disabled={habis} onClick={() => onAddToCart(selectedVariant, quantity)}
+              className="flex-1 py-3 rounded-xl font-medium border-2 disabled:opacity-40 transition-colors"
+              style={{ borderColor: accent, color: accent }}>
+              + Keranjang
+            </button>
+            <button type="button" disabled={habis} onClick={() => onBuyNow(selectedVariant, quantity)}
+              className="flex-1 py-3 rounded-xl font-bold text-white disabled:opacity-40 transition-opacity"
+              style={{ background: accent }}>
+              Beli Sekarang
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CartDrawer({ cart, accent, onClose, onUpdateQty, onRemove, onCheckout }) {
+  const subtotal = cartSubtotal(cart);
+  return (
+    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
+      <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md max-h-[85vh] overflow-y-auto flex flex-col">
+        <div className="flex items-center justify-between p-4 border-b border-[#E5E2D9] sticky top-0 bg-white z-10">
+          <h2 className="font-bold text-[#1C1C1A]">Keranjang kamu</h2>
+          <button onClick={onClose} className="text-[#8B8D85] hover:text-[#1C1C1A]"><X size={20} /></button>
+        </div>
+
+        {cart.length === 0 ? (
+          <div className="p-10 text-center">
+            <ShoppingCart size={28} className="mx-auto mb-3 text-[#8B8D85]" />
+            <p className="text-sm text-[#8B8D85]">Keranjang kamu masih kosong.</p>
+          </div>
+        ) : (
+          <>
+            <div className="p-4 space-y-3 flex-1">
+              {cart.map((item) => (
+                <div key={item.key} className="flex gap-3">
+                  <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0" style={{ background: `${accent}22` }}>
+                    {item.image && <img src={item.image} alt={item.name} className="w-full h-full object-cover" />}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-[#1C1C1A] line-clamp-1">{item.name}</p>
+                    <p className="text-sm font-black" style={{ color: accent }}>
+                      Rp{Number(item.price).toLocaleString("id-ID")}
+                    </p>
+                    <div className="flex items-center gap-2 mt-1.5">
+                      <button onClick={() => onUpdateQty(item.key, item.quantity - 1)}
+                        className="w-6 h-6 rounded border border-[#E5E2D9] flex items-center justify-center hover:bg-[#FAFAF7]">
+                        <Minus size={12} />
+                      </button>
+                      <span className="w-5 text-center text-sm">{item.quantity}</span>
+                      <button onClick={() => onUpdateQty(item.key, item.quantity + 1)}
+                        className="w-6 h-6 rounded border border-[#E5E2D9] flex items-center justify-center hover:bg-[#FAFAF7]">
+                        <Plus size={12} />
+                      </button>
+                      <button onClick={() => onRemove(item.key)} className="ml-auto text-[#A32D2D] p-1 hover:bg-[#FBEAEA] rounded">
+                        <Trash2 size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="p-4 border-t border-[#E5E2D9] sticky bottom-0 bg-white">
+              <div className="flex justify-between text-sm mb-3">
+                <span className="text-[#5B6472]">Subtotal</span>
+                <span className="font-bold text-[#1C1C1A]">Rp{subtotal.toLocaleString("id-ID")}</span>
+              </div>
+              <button onClick={onCheckout}
+                className="w-full py-3.5 text-white rounded-xl font-bold transition-opacity"
+                style={{ background: accent }}>
+                Checkout
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CartCheckoutModal({ items, store, accent, onClose, onOrderComplete }) {
+  const [buyerName, setBuyerName] = useState("");
+  const [buyerPhone, setBuyerPhone] = useState("");
+  const [buyerEmail, setBuyerEmail] = useState("");
   const [alamatKeyword, setAlamatKeyword] = useState("");
   const [alamatResults, setAlamatResults] = useState([]);
   const [searchingAlamat, setSearchingAlamat] = useState(false);
@@ -200,8 +408,8 @@ function CheckoutModal({ product, store, accent, onClose }) {
   const [diskonError, setDiskonError] = useState("");
   const [lastOrderId, setLastOrderId] = useState("");
 
-  const unitPrice = selectedVariant ? selectedVariant.price : product.price;
-  const subtotal = unitPrice * quantity;
+  const subtotal = cartSubtotal(items);
+  const totalBerat = cartTotalWeight(items);
   const totalSebelumDiskon = subtotal + (selectedOngkir?.cost || 0);
   const totalPrice = Math.max(totalSebelumDiskon - (diskonTerpakai?.discountAmount || 0), 0);
 
@@ -234,10 +442,10 @@ function CheckoutModal({ product, store, accent, onClose }) {
   useEffect(() => {
     if (diskonTerpakai) {
       setDiskonTerpakai(null);
-      setDiskonError("Kode diskon direset karena pesanan berubah, terapkan lagi ya.");
+      setDiskonError("Kode diskon direset karena ongkir berubah, terapkan lagi ya.");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [quantity, selectedVariant, selectedOngkir]);
+  }, [selectedOngkir]);
 
   async function handleCariAlamat(e) {
     e.preventDefault();
@@ -256,11 +464,10 @@ function CheckoutModal({ product, store, accent, onClose }) {
     setSelectedOngkir(null);
     if (!store.origin_id) return;
     setLoadingOngkir(true);
-    const beratTotal = (product.weight || 1000) * quantity;
     const res = await fetch("/api/rajaongkir/cost", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ origin: store.origin_id, destination: String(lokasi.id), weight: beratTotal }),
+      body: JSON.stringify({ origin: store.origin_id, destination: String(lokasi.id), weight: totalBerat }),
     });
     const data = await res.json();
     setOngkirOptions(data.data || []);
@@ -276,42 +483,54 @@ function CheckoutModal({ product, store, accent, onClose }) {
 
     trackInitiateCheckout(store, {
       totalPrice,
-      productName: selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name,
-      productId: product.id,
-      quantity,
+      items: items.map((i) => ({ productId: i.productId, name: i.name, quantity: i.quantity })),
     });
 
     const orderId = `TOKKU-${Date.now()}`;
     setLastOrderId(orderId);
-const productName = selectedVariant ? `${product.name} - ${selectedVariant.name}` : product.name;
 
-const { error: orderError } = await supabase
-  .from("orders").insert({
-    store_id: store.id,
-    product_id: product.id,
-    product_name: productName,
-    buyer_name: buyerName,
-    buyer_phone: buyerPhone,
-    quantity,
-    total_price: totalPrice,
-    status: "pending",
-    destination_id: String(destinasi.id),
-    destination_label: destinasi.label,
-    full_address: alamatLengkap,
-    shipping_cost: selectedOngkir.cost,
-    courier: `${selectedOngkir.name} - ${selectedOngkir.service}`,
-    midtrans_order_id: orderId,
-    discount_code: diskonTerpakai?.code || null,
-    discount_amount: diskonTerpakai?.discountAmount || 0,
-  });
+    const discountAmount = diskonTerpakai?.discountAmount || 0;
 
-if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + orderError.message); }
+    // 1 baris order per item cart, semuanya share midtrans_order_id yang sama
+    // (jadi "1 transaksi" secara logis walau kesebar di beberapa baris).
+    // Ongkir & diskon ditotal ke baris PERTAMA aja, biar SUM(total_price)
+    // semua baris tetap sama persis dengan totalPrice yang beneran ditagih.
+    const rows = items.map((item, idx) => {
+      const itemSubtotal = item.price * item.quantity;
+      const isFirst = idx === 0;
+      const rowTotal = isFirst
+        ? Math.max(itemSubtotal + selectedOngkir.cost - discountAmount, 0)
+        : itemSubtotal;
+      return {
+        store_id: store.id,
+        product_id: item.productId,
+        product_name: item.name,
+        buyer_name: buyerName,
+        buyer_phone: buyerPhone,
+        quantity: item.quantity,
+        total_price: rowTotal,
+        status: "pending",
+        destination_id: String(destinasi.id),
+        destination_label: destinasi.label,
+        full_address: alamatLengkap,
+        shipping_cost: isFirst ? selectedOngkir.cost : 0,
+        courier: `${selectedOngkir.name} - ${selectedOngkir.service}`,
+        midtrans_order_id: orderId,
+        discount_code: isFirst ? (diskonTerpakai?.code || null) : null,
+        discount_amount: isFirst ? discountAmount : 0,
+      };
+    });
 
+    const { error: orderError } = await supabase.from("orders").insert(rows);
+
+    if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + orderError.message); }
+
+    const ringkasanProduk = items.length === 1 ? items[0].name : `${items[0].name} + ${items.length - 1} produk lainnya`;
     await buatNotifikasi(supabase, {
       storeId: store.id,
       type: "order_masuk",
       title: "Pesanan baru masuk",
-      message: `${buyerName} memesan ${productName}. Menunggu pembayaran.`,
+      message: `${buyerName} memesan ${ringkasanProduk}. Menunggu pembayaran.`,
     });
 
     const payRes = await fetch("/api/payment", {
@@ -324,9 +543,9 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
         customerEmail: buyerEmail || `${buyerPhone}@tokku.id`,
         customerPhone: buyerPhone,
         items: [
-          { id: product.id, name: productName, price: unitPrice, quantity },
+          ...items.map((item) => ({ id: item.productId, name: item.name, price: item.price, quantity: item.quantity })),
           ...(selectedOngkir.cost > 0 ? [{ id: "ongkir", name: `Ongkir ${selectedOngkir.name}`, price: selectedOngkir.cost, quantity: 1 }] : []),
-          ...(diskonTerpakai?.discountAmount > 0 ? [{ id: "diskon", name: `Diskon (${diskonTerpakai.code})`, price: -diskonTerpakai.discountAmount, quantity: 1 }] : []),
+          ...(discountAmount > 0 ? [{ id: "diskon", name: `Diskon (${diskonTerpakai.code})`, price: -discountAmount, quantity: 1 }] : []),
         ],
       }),
     });
@@ -338,11 +557,17 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
     window.snap.pay(payData.token, {
       onSuccess: async () => {
         await supabase.from("orders").update({ status: "paid" }).eq("midtrans_order_id", orderId);
-        trackPurchase(store, { orderId, totalPrice, productName, productId: product.id, quantity });
+        trackPurchase(store, {
+          orderId,
+          totalPrice,
+          items: items.map((i) => ({ productId: i.productId, name: i.name, quantity: i.quantity })),
+        });
+        onOrderComplete();
         setPaymentStatus("paid");
         setSuccess(true);
       },
       onPending: () => {
+        onOrderComplete();
         setPaymentStatus("pending");
         setSuccess(true);
       },
@@ -387,46 +612,19 @@ if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + ord
           </div>
         ) : (
           <form onSubmit={handleSubmit} className="p-4 space-y-4">
-            <div className="flex gap-3 p-3 rounded-xl" style={{ background: `${accent}0D` }}>
-              <div className="w-16 h-16 rounded-lg overflow-hidden flex-shrink-0"
-                style={{ background: `${accent}22` }}>
-                {product.images?.[0] && (
-                  <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
-                )}
-              </div>
-              <div className="flex-1">
-                <p className="text-sm font-semibold text-[#1C1C1A]">{product.name}</p>
-                <p className="text-sm font-black mt-0.5" style={{ color: accent }}>
-                  Rp{Number(unitPrice).toLocaleString("id-ID")}
-                </p>
-              </div>
-            </div>
-
-            {product.variants?.length > 0 && (
-              <div>
-                <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Varian</label>
-                <select value={selectedVariant?.name}
-                  onChange={(e) => setSelectedVariant(product.variants.find((v) => v.name === e.target.value))}
-                  className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none"
-                  style={{ borderColor: "var(--focus-color)" }}
-                  onFocus={(e) => e.target.style.borderColor = accent}
-                  onBlur={(e) => e.target.style.borderColor = "#E5E2D9"}>
-                  {product.variants.map((v) => (
-                    <option key={v.name} value={v.name}>
-                      {v.name} — Rp{Number(v.price).toLocaleString("id-ID")}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-
-            <div>
-              <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Jumlah</label>
-              <input type="number" min={1} required value={quantity}
-                onChange={(e) => setQuantity(parseInt(e.target.value || 1))}
-                className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none"
-                onFocus={(e) => e.target.style.borderColor = accent}
-                onBlur={(e) => e.target.style.borderColor = "#E5E2D9"} />
+            <div className="space-y-2 p-3 rounded-xl" style={{ background: `${accent}0D` }}>
+              {items.map((item) => (
+                <div key={item.key} className="flex gap-3">
+                  <div className="w-12 h-12 rounded-lg overflow-hidden flex-shrink-0"
+                    style={{ background: `${accent}22` }}>
+                    {item.image && <img src={item.image} alt={item.name} className="w-full h-full object-cover" />}
+                  </div>
+                  <div className="flex-1">
+                    <p className="text-sm font-semibold text-[#1C1C1A] line-clamp-1">{item.name}</p>
+                    <p className="text-xs text-[#5B6472]">{item.quantity}x · Rp{Number(item.price).toLocaleString("id-ID")}</p>
+                  </div>
+                </div>
+              ))}
             </div>
 
             <div>

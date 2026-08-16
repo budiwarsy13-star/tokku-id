@@ -12,15 +12,17 @@ const supabaseAdmin = createClient(
 // Kirim event Purchase server-side. Ini sinyal yang PALING diandalkan buat
 // algoritma iklan (beda dari trackPurchase di client yang bisa gagal kalau
 // pembeli nutup browser) — karena jalan dari webhook, independen dari browser.
-async function kirimPurchaseServerSide(store, order) {
+async function kirimPurchaseServerSide(store, orderRows, grossAmount) {
   const eventTime = Math.floor(Date.now() / 1000);
+  const first = orderRows[0];
+  const contentIds = orderRows.map((o) => o.product_id);
 
   // Meta Conversions API — butuh Pixel ID + access token yang seller generate
   // sendiri di Meta Events Manager (bukan Pixel ID doang, beda dari yang dipasang di client).
   if (store.meta_pixel_id && store.meta_access_token) {
     try {
-      const hashedPhone = order.buyer_phone
-        ? crypto.createHash("sha256").update(order.buyer_phone.replace(/\D/g, "")).digest("hex")
+      const hashedPhone = first.buyer_phone
+        ? crypto.createHash("sha256").update(first.buyer_phone.replace(/\D/g, "")).digest("hex")
         : undefined;
       await fetch(`https://graph.facebook.com/v21.0/${store.meta_pixel_id}/events?access_token=${store.meta_access_token}`, {
         method: "POST",
@@ -30,12 +32,12 @@ async function kirimPurchaseServerSide(store, order) {
             event_name: "Purchase",
             event_time: eventTime,
             action_source: "website",
-            event_id: order.midtrans_order_id,
+            event_id: first.midtrans_order_id,
             user_data: hashedPhone ? { ph: [hashedPhone] } : {},
             custom_data: {
               currency: "IDR",
-              value: Number(order.total_price),
-              content_ids: [order.product_id],
+              value: grossAmount,
+              content_ids: contentIds,
               content_type: "product",
             },
           }],
@@ -56,14 +58,14 @@ async function kirimPurchaseServerSide(store, order) {
         {
           method: "POST",
           body: JSON.stringify({
-            client_id: `tokku-${order.midtrans_order_id}`,
+            client_id: `tokku-${first.midtrans_order_id}`,
             events: [{
               name: "purchase",
               params: {
-                transaction_id: order.midtrans_order_id,
+                transaction_id: first.midtrans_order_id,
                 currency: "IDR",
-                value: Number(order.total_price),
-                items: [{ item_id: order.product_id, item_name: order.product_name, quantity: order.quantity }],
+                value: grossAmount,
+                items: orderRows.map((o) => ({ item_id: o.product_id, item_name: o.product_name, quantity: o.quantity })),
               },
             }],
           }),
@@ -106,41 +108,49 @@ export async function POST(request) {
       const updateData = { status: newStatus };
       if (newStatus === "paid") updateData.paid_at = new Date().toISOString();
 
-      const { data: updatedOrder } = await supabaseAdmin
+      // Pakai .select() biasa (bukan .maybeSingle()) karena 1 midtrans_order_id
+      // bisa punya BEBERAPA baris order kalau pembeli checkout banyak produk
+      // sekaligus dari cart — semuanya kebayar bareng lewat 1 transaksi Midtrans.
+      const { data: updatedOrders } = await supabaseAdmin
         .from("orders")
         .update(updateData)
         .eq("midtrans_order_id", order_id)
-        .select()
-        .maybeSingle();
+        .select();
 
       // Notifikasi "pembayaran masuk" — ini yang dimaksud notifikasi langsung
       // dari payment gateway, karena webhook Midtrans ini server-to-server,
       // gak lewat browser pembeli sama sekali.
-      if (newStatus === "paid" && updatedOrder) {
+      if (newStatus === "paid" && updatedOrders?.length > 0) {
+        const first = updatedOrders[0];
+        const totalGabungan = updatedOrders.reduce((sum, o) => sum + Number(o.total_price), 0);
+        const ringkasanProduk = updatedOrders.length === 1
+          ? first.product_name
+          : `${first.product_name} + ${updatedOrders.length - 1} produk lainnya`;
+
         await supabaseAdmin.from("notifications").insert({
-          store_id: updatedOrder.store_id,
-          order_id: updatedOrder.id,
+          store_id: first.store_id,
+          order_id: first.id,
           type: "pembayaran_masuk",
           title: "Pembayaran diterima",
-          message: `Pembayaran untuk ${updatedOrder.product_name} sebesar Rp${Number(updatedOrder.total_price).toLocaleString("id-ID")} sudah masuk.`,
+          message: `Pembayaran untuk ${ringkasanProduk} sebesar Rp${totalGabungan.toLocaleString("id-ID")} sudah masuk.`,
         });
 
-        await kirimPush(supabaseAdmin, updatedOrder.store_id, {
+        await kirimPush(supabaseAdmin, first.store_id, {
           title: "Pembayaran diterima",
-          message: `Rp${Number(updatedOrder.total_price).toLocaleString("id-ID")} dari ${updatedOrder.buyer_name} untuk ${updatedOrder.product_name}.`,
+          message: `Rp${totalGabungan.toLocaleString("id-ID")} dari ${first.buyer_name} untuk ${ringkasanProduk}.`,
           url: "/dashboard/pesanan",
-          orderId: updatedOrder.id,
+          orderId: first.id,
         });
 
         // Ambil kredensial tracking toko ini, terus kirim event Purchase server-side
         const { data: storeCreds } = await supabaseAdmin
           .from("stores")
           .select("meta_pixel_id, meta_access_token, ga4_measurement_id, ga4_api_secret")
-          .eq("id", updatedOrder.store_id)
+          .eq("id", first.store_id)
           .maybeSingle();
 
         if (storeCreds) {
-          await kirimPurchaseServerSide(storeCreds, updatedOrder);
+          await kirimPurchaseServerSide(storeCreds, updatedOrders, totalGabungan);
         }
       }
     }

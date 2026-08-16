@@ -141,9 +141,18 @@ function LacakPesananContent() {
                 <span className="text-xs bg-[#FBEAEA] text-[#A32D2D] px-2 py-0.5 rounded-full font-medium">Pembayaran gagal</span>
               )}
             </div>
-            <h2 className="font-bold text-[#1C1C1A] mb-0.5">{result.productName}</h2>
+            <h2 className="font-bold text-[#1C1C1A] mb-0.5">
+              {result.items.length === 1 ? result.items[0].productName : `${result.items.length} produk`}
+            </h2>
+            {result.items.length > 1 && (
+              <ul className="text-sm text-[#5B6472] mb-2 space-y-0.5">
+                {result.items.map((it, i) => (
+                  <li key={i}>· {it.productName} ({it.quantity}x)</li>
+                ))}
+              </ul>
+            )}
             <p className="text-sm text-[#8B8D85] mb-5">
-              {result.quantity}x · Dari toko {result.storeName}
+              {result.items.length === 1 && `${result.items[0].quantity}x · `}Dari toko {result.storeName}
               {result.storeSlug && (
                 <> · <a href={`/${result.storeSlug}`} className="underline">Kunjungi toko</a></>
               )}
