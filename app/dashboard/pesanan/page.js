@@ -264,7 +264,6 @@ export default function PesananPage() {
           )}
         </div>
       </div>
-      </div>
 
       {orderUntukResi && (
         <ResiModal
@@ -276,7 +275,6 @@ export default function PesananPage() {
           }}
         />
       )}
-      </div>
     </DashboardLayout>
   );
 }

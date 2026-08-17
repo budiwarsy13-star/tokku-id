@@ -105,7 +105,6 @@ export default function DiskonPage() {
             })}
           </div>
         )}
-      </div>
 
       {showForm && (
         <FormKodeDiskon

@@ -238,12 +238,6 @@ function DashboardShell({ store }) {
     paid: { label: "Dibayar", className: "bg-[#EAF3DE] text-[#3B6D11]" },
   };
 
-
-  const statusBadge = {
-    pending: { label: "Menunggu bayar", className: "bg-[#F1EFE8] text-[#5B6472]" },
-    paid: { label: "Dibayar", className: "bg-[#EAF3DE] text-[#3B6D11]" },
-  };
-
   return (
     <DashboardLayout store={store} activeMenu="/dashboard">
       <div className="max-w-5xl">

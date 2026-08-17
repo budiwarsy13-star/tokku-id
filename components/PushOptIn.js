@@ -69,7 +69,15 @@ export default function PushOptIn() {
       else { setStatus("off"); setError(result.message || "Gagal aktifin notifikasi."); }
     } catch (err) {
       setStatus("off");
-      setError(err.message);
+      // err.name kasih tau JENIS error dari browser (AbortError, NotAllowedError, dll)
+      // — ini penting buat bedain "device/jaringan gak bisa capai push service"
+      // vs masalah lain yang beneran bisa kita benerin dari kode.
+      const isAbortError = err.name === "AbortError" || /push service/i.test(err.message);
+      setError(
+        isAbortError
+          ? "Perangkat/jaringan kamu gak berhasil terhubung ke layanan push notifikasi. Coba jaringan WiFi lain, atau pastikan Google Play Services aktif & terupdate."
+          : (err.message || "Gagal aktifin notifikasi.")
+      );
     }
   }
 
