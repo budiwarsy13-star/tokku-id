@@ -484,6 +484,7 @@ export default function PengaturanToko() {
             </button>
           </div>
         )}
+      </div>
     </DashboardLayout>
   );
 }
