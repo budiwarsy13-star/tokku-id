@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
+import NotificationBell from "@/components/NotificationBell";
+import { Eye, Search, Upload } from "lucide-react";
 
 
 export default function PengaturanToko() {
@@ -484,7 +486,6 @@ export default function PengaturanToko() {
             </button>
           </div>
         )}
-      </div>
     </DashboardLayout>
   );
 }

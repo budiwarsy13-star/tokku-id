@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
+import NotificationBell from "@/components/NotificationBell";
+import { Plus, Tag, Trash2, X } from "lucide-react";
 
 
 export default function DiskonPage() {
