@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
-import NotificationBell from "@/components/NotificationBell";
 import { Plus, Tag, Trash2, X } from "lucide-react";
 
 
@@ -55,13 +54,10 @@ export default function DiskonPage() {
 
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-xl font-bold text-[#1C1C1A]">Kode diskon</h1>
-          <div className="flex items-center gap-3">
-            <button onClick={() => setShowForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-[#D85A30] text-white rounded-lg text-sm font-medium hover:bg-[#B84A25] transition-colors">
-              <Plus size={16} /> Buat kode baru
-            </button>
-            <NotificationBell storeId={store.id} />
-          </div>
+          <button onClick={() => setShowForm(true)}
+            className="flex items-center gap-2 px-4 py-2 bg-[#D85A30] text-white rounded-lg text-sm font-medium hover:bg-[#B84A25] transition-colors">
+            <Plus size={16} /> Buat kode baru
+          </button>
         </div>
 
         {codes.length === 0 ? (

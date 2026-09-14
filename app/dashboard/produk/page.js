@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
-import NotificationBell from "@/components/NotificationBell";
 
 export default function ProdukPage() {
   const [store, setStore] = useState(null);
