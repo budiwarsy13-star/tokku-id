@@ -105,6 +105,46 @@ export async function POST(request) {
       newStatus = "pending";
     }
 
+    // LAPISAN PERTAHANAN TERAKHIR: sebelum mark PAID, cocokin nominal yang
+    // BENERAN dibayar (gross_amount dari Midtrans) ke total yang SEHARUSNYA
+    // (SUM total_price di database, yang udah dihitung server pas checkout).
+    // Kalau beda, JANGAN mark paid otomatis — tandain buat direview manual.
+    // Dalam kondisi normal ini harusnya SELALU cocok karena /api/checkout
+    // yang nentuin gross_amount ke Midtrans; kalau beda, itu sinyal ada yang
+    // gak beres (bug atau upaya kecurangan), bukan hal yang boleh diabaikan.
+    if (newStatus === "paid") {
+      const { data: existingRows } = await supabaseAdmin
+        .from("orders")
+        .select("*")
+        .eq("midtrans_order_id", order_id);
+
+      if (existingRows && existingRows.length > 0) {
+        const totalSeharusnya = existingRows.reduce((sum, o) => sum + Number(o.total_price), 0);
+        const totalDibayar = Number(gross_amount);
+
+        if (Math.abs(totalSeharusnya - totalDibayar) > 1) {
+          const sudahDireview = existingRows.every((o) => o.status === "perlu_review");
+          if (!sudahDireview) {
+            await supabaseAdmin.from("orders").update({ status: "perlu_review" }).eq("midtrans_order_id", order_id);
+            await supabaseAdmin.from("notifications").insert({
+              store_id: existingRows[0].store_id,
+              order_id: existingRows[0].id,
+              type: "order_pending",
+              title: "⚠️ Nominal pembayaran gak cocok — perlu direview",
+              message: `Pesanan ${existingRows[0].product_name} seharusnya Rp${totalSeharusnya.toLocaleString("id-ID")}, tapi yang dibayar Rp${totalDibayar.toLocaleString("id-ID")}. JANGAN dikirim dulu sebelum dicek manual.`,
+            });
+            await kirimPush(supabaseAdmin, existingRows[0].store_id, {
+              title: "⚠️ Perlu review manual",
+              message: `Ada pesanan dengan nominal gak cocok. Cek dashboard sebelum kirim barang.`,
+              url: "/dashboard/pesanan",
+              orderId: existingRows[0].id,
+            });
+          }
+          return Response.json({ message: "OK - flagged for review" });
+        }
+      }
+    }
+
     if (newStatus) {
       const updateData = { status: newStatus };
       if (newStatus === "paid") updateData.paid_at = new Date().toISOString();

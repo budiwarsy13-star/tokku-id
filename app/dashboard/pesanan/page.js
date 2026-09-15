@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import { buatNotifikasi } from "@/lib/notifications";
-import { ShoppingBag, Tag, Clock, Truck, CheckCircle2, XCircle, Search } from "lucide-react";
+import { ShoppingBag, Tag, Clock, Truck, CheckCircle2, XCircle, Search, AlertTriangle } from "lucide-react";
 
 const STATUS_LABEL = {
   pending: { label: "Menunggu", color: "bg-[#FFF4E0] text-[#B8860B]" },
@@ -12,11 +12,13 @@ const STATUS_LABEL = {
   shipped: { label: "Dikirim", color: "bg-[#E8F0FA] text-[#2563EB]" },
   selesai: { label: "Selesai", color: "bg-[#F1EFE8] text-[#5B6472]" },
   gagal: { label: "Dibatalkan", color: "bg-[#FBEAEA] text-[#A32D2D]" },
+  perlu_review: { label: "⚠️ Perlu Review", color: "bg-[#FDE9D9] text-[#B8471C]" },
 };
 
 // Definisi tab filter. `match` nentuin order mana yang masuk tab ini.
 const TABS = [
   { key: "semua", label: "Semua", match: () => true },
+  { key: "review", label: "⚠️ Perlu Review", match: (o) => o.status === "perlu_review" },
   { key: "perlu_diproses", label: "Perlu diproses", match: (o) => o.status === "paid" },
   { key: "dikirim", label: "Sedang dikirim", match: (o) => o.status === "shipped" },
   { key: "selesai", label: "Selesai", match: (o) => o.status === "selesai" },
@@ -91,12 +93,13 @@ export default function PesananPage() {
 
   // Hitung jumlah tiap kategori sekali aja, dipakai buat angka di stat card & badge tab
   const counts = useMemo(() => {
-    const c = { perlu_diproses: 0, dikirim: 0, selesai: 0, dibatalkan: 0 };
+    const c = { perlu_diproses: 0, dikirim: 0, selesai: 0, dibatalkan: 0, review: 0 };
     for (const o of orders) {
       if (o.status === "paid") c.perlu_diproses++;
       else if (o.status === "shipped") c.dikirim++;
       else if (o.status === "selesai") c.selesai++;
       else if (o.status === "gagal") c.dibatalkan++;
+      else if (o.status === "perlu_review") c.review++;
     }
     return c;
   }, [orders]);
@@ -131,6 +134,21 @@ export default function PesananPage() {
   return (
     <DashboardLayout store={store} activeMenu="/dashboard/pesanan" headerTitle="Pesanan">
       <div>
+        {/* BANNER URGENT — cuma muncul kalau ada nominal pembayaran yang gak
+            cocok dan butuh dicek manual sebelum barang dikirim */}
+        {counts.review > 0 && (
+          <button
+            onClick={() => setActiveTab("review")}
+            className="w-full flex items-center gap-3 bg-[#FDE9D9] border border-[#F0B37E] rounded-xl px-4 py-3 mb-6 text-left hover:bg-[#FBDFC7] transition-colors"
+          >
+            <AlertTriangle size={18} className="text-[#B8471C] flex-shrink-0" />
+            <p className="text-sm text-[#8A3814]">
+              <strong>{counts.review} pesanan</strong> punya nominal pembayaran yang gak cocok —
+              cek manual dulu sebelum kirim barang.
+            </p>
+          </button>
+        )}
+
         {/* STAT CARDS */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
           {statCards.map((s) => (
@@ -240,12 +258,20 @@ export default function PesananPage() {
                         disabled={o.status === "gagal"}
                         className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
                       >
+                        {o.status === "perlu_review" && (
+                          <option value="perlu_review">⚠️ Perlu Review</option>
+                        )}
                         <option value="pending">Menunggu</option>
-                        <option value="paid">Dibayar</option>
+                        <option value="paid">Dibayar (udah dicek manual, lanjutkan)</option>
                         <option value="shipped">Dikirim</option>
                         <option value="selesai">Selesai</option>
                         {o.status === "gagal" && <option value="gagal">Dibatalkan</option>}
                       </select>
+                      {o.status === "perlu_review" && (
+                        <p className="text-[11px] text-[#B8471C] mt-1">
+                          Cek Midtrans Dashboard buat nominal aslinya sebelum ubah status.
+                        </p>
+                      )}
                       {o.waybill_number && (
                         <button
                           onClick={() => setOrderUntukResi(o)}

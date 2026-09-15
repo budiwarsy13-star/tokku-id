@@ -26,6 +26,7 @@ const snap = new midtransClient.Snap({
 
 export async function POST(request) {
   const stokYangUdahDikurangi = []; // buat rollback kalau ada langkah belakangan gagal
+  let orderIdYangUdahDiinsert = null; // buat cleanup kalau step Midtrans gagal setelah insert
 
   try {
     const body = await request.json();
@@ -175,6 +176,7 @@ export async function POST(request) {
       console.error("Insert order error:", insertError);
       return Response.json({ success: false, message: "Gagal membuat pesanan, coba lagi." }, { status: 500 });
     }
+    orderIdYangUdahDiinsert = midtransOrderId;
 
     // 6. Notifikasi "order masuk" ke seller.
     const ringkasanProduk = itemsTervalidasi.length === 1
@@ -202,6 +204,11 @@ export async function POST(request) {
         phone: buyerPhone.trim(),
       },
       item_details: itemDetails,
+      // Transaksi expired otomatis dalam 2 jam (bukan default 24 jam) kalau
+      // buyer gak nyelesain pembayaran. Midtrans otomatis ngirim webhook
+      // "expire" pas itu kejadian, yang bakal mengembalikan stok yang sempat
+      // direservasi tadi (lihat kembalikanStok di webhook handler).
+      expiry: { unit: "hour", duration: 2 },
     });
 
     return Response.json({
@@ -213,9 +220,16 @@ export async function POST(request) {
     });
   } catch (error) {
     console.error("Checkout error:", error);
-    // Best-effort rollback stok kalau errornya kejadian setelah stok kepotong
+    // Best-effort rollback: kembaliin stok yang sempat kepotong...
     for (const item of stokYangUdahDikurangi) {
       await kembalikanStok(supabaseAdmin, item.productId, item.variantName, item.quantity);
+    }
+    // ...dan HAPUS baris order yang udah kesimpen tapi gagal dapet transaksi
+    // Midtrans. Kalau baris ini dibiarin, dia bakal "nyangkut" selamanya di
+    // status pending — gak akan pernah dapet webhook karena Midtrans-nya
+    // sendiri gak pernah tau transaksi ini ada.
+    if (orderIdYangUdahDiinsert) {
+      await supabaseAdmin.from("orders").delete().eq("midtrans_order_id", orderIdYangUdahDiinsert);
     }
     return Response.json({ success: false, message: "Terjadi kesalahan, coba lagi." }, { status: 500 });
   }
