@@ -1,6 +1,7 @@
 import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { kirimPush } from "@/lib/push-server";
+import { kembalikanStok } from "@/lib/stock-server";
 
 // Pakai service role di sini karena ini request server-to-server dari Midtrans,
 // bukan dari browser user, jadi butuh akses penuh buat update tabel orders.
@@ -108,13 +109,14 @@ export async function POST(request) {
       const updateData = { status: newStatus };
       if (newStatus === "paid") updateData.paid_at = new Date().toISOString();
 
-      // Pakai .select() biasa (bukan .maybeSingle()) karena 1 midtrans_order_id
-      // bisa punya BEBERAPA baris order kalau pembeli checkout banyak produk
-      // sekaligus dari cart — semuanya kebayar bareng lewat 1 transaksi Midtrans.
+      // Guard idempotency: exclude baris yang statusnya UDAH sama kayak newStatus.
+      // Midtrans kadang ngirim webhook yang sama berkali-kali (retry) — tanpa ini,
+      // notifikasi/push/restore-stok bisa kejalanin dobel buat event yang sama.
       const { data: updatedOrders } = await supabaseAdmin
         .from("orders")
         .update(updateData)
         .eq("midtrans_order_id", order_id)
+        .neq("status", newStatus)
         .select();
 
       // Notifikasi "pembayaran masuk" — ini yang dimaksud notifikasi langsung
@@ -151,6 +153,14 @@ export async function POST(request) {
 
         if (storeCreds) {
           await kirimPurchaseServerSide(storeCreds, updatedOrders, totalGabungan);
+        }
+      }
+
+      // Transaksi gagal/dibatalkan/expired — kembalikan stok yang sempat
+      // "direservasi" (dikurangi) pas order ini dibuat di /api/checkout.
+      if (newStatus === "gagal" && updatedOrders?.length > 0) {
+        for (const order of updatedOrders) {
+          await kembalikanStok(supabaseAdmin, order.product_id, order.variant_name, order.quantity);
         }
       }
     }

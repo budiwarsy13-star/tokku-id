@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { buatNotifikasi } from "@/lib/notifications";
 import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent } from "@/lib/tracking";
 import { getCart, addToCart, updateCartQty, removeFromCart, clearCart, cartTotalItems, cartSubtotal, cartTotalWeight } from "@/lib/cart";
 import PromoCarousel from "@/components/PromoCarousel";
@@ -486,80 +485,49 @@ function CartCheckoutModal({ items, store, accent, onClose, onOrderComplete }) {
       items: items.map((i) => ({ productId: i.productId, name: i.name, quantity: i.quantity })),
     });
 
-    const orderId = `TOKKU-${Date.now()}`;
-    setLastOrderId(orderId);
-
-    const discountAmount = diskonTerpakai?.discountAmount || 0;
-
-    // 1 baris order per item cart, semuanya share midtrans_order_id yang sama
-    // (jadi "1 transaksi" secara logis walau kesebar di beberapa baris).
-    // Ongkir & diskon ditotal ke baris PERTAMA aja, biar SUM(total_price)
-    // semua baris tetap sama persis dengan totalPrice yang beneran ditagih.
-    const rows = items.map((item, idx) => {
-      const itemSubtotal = item.price * item.quantity;
-      const isFirst = idx === 0;
-      const rowTotal = isFirst
-        ? Math.max(itemSubtotal + selectedOngkir.cost - discountAmount, 0)
-        : itemSubtotal;
-      return {
-        store_id: store.id,
-        product_id: item.productId,
-        product_name: item.name,
-        buyer_name: buyerName,
-        buyer_phone: buyerPhone,
-        quantity: item.quantity,
-        total_price: rowTotal,
-        status: "pending",
-        destination_id: String(destinasi.id),
-        destination_label: destinasi.label,
-        full_address: alamatLengkap,
-        shipping_cost: isFirst ? selectedOngkir.cost : 0,
-        courier: `${selectedOngkir.name} - ${selectedOngkir.service}`,
-        midtrans_order_id: orderId,
-        discount_code: isFirst ? (diskonTerpakai?.code || null) : null,
-        discount_amount: isFirst ? discountAmount : 0,
-      };
-    });
-
-    const { error: orderError } = await supabase.from("orders").insert(rows);
-
-    if (orderError) { setSaving(false); return alert("Gagal membuat pesanan: " + orderError.message); }
-
-    const ringkasanProduk = items.length === 1 ? items[0].name : `${items[0].name} + ${items.length - 1} produk lainnya`;
-    await buatNotifikasi(supabase, {
-      storeId: store.id,
-      type: "order_masuk",
-      title: "Pesanan baru masuk",
-      message: `${buyerName} memesan ${ringkasanProduk}. Menunggu pembayaran.`,
-    });
-
-    const payRes = await fetch("/api/payment", {
+    // Checkout SEPENUHNYA diproses di server (/api/checkout) — client cuma
+    // ngirim ID produk, varian, dan jumlah. Harga, ongkir, diskon, dan stok
+    // semuanya dihitung ulang & divalidasi di server, gak dipercaya dari sini.
+    const checkoutRes = await fetch("/api/checkout", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        orderId,
-        amount: totalPrice,
-        customerName: buyerName,
-        customerEmail: buyerEmail || `${buyerPhone}@tokku.id`,
-        customerPhone: buyerPhone,
-        items: [
-          ...items.map((item) => ({ id: item.productId, name: item.name, price: item.price, quantity: item.quantity })),
-          ...(selectedOngkir.cost > 0 ? [{ id: "ongkir", name: `Ongkir ${selectedOngkir.name}`, price: selectedOngkir.cost, quantity: 1 }] : []),
-          ...(discountAmount > 0 ? [{ id: "diskon", name: `Diskon (${diskonTerpakai.code})`, price: -discountAmount, quantity: 1 }] : []),
-        ],
+        storeId: store.id,
+        buyerName,
+        buyerPhone,
+        buyerEmail: buyerEmail || null,
+        destinationId: destinasi.id,
+        destinationLabel: destinasi.label,
+        fullAddress: alamatLengkap,
+        selectedCourier: { name: selectedOngkir.name, service: selectedOngkir.service },
+        discountCode: diskonTerpakai?.code || null,
+        items: items.map((item) => ({
+          productId: item.productId,
+          variantName: item.variantName || null,
+          quantity: item.quantity,
+        })),
       }),
     });
 
-    const payData = await payRes.json();
+    const checkoutData = await checkoutRes.json();
     setSaving(false);
-    if (payData.error) return alert("Gagal membuat pembayaran: " + payData.error);
 
-    window.snap.pay(payData.token, {
+    if (!checkoutData.success) {
+      return alert(checkoutData.message || "Gagal membuat pesanan, coba lagi.");
+    }
+
+    const orderId = checkoutData.orderId;
+    setLastOrderId(orderId);
+
+    window.snap.pay(checkoutData.token, {
       onSuccess: async () => {
-        await supabase.from("orders").update({ status: "paid" }).eq("midtrans_order_id", orderId);
+        // CATATAN KEAMANAN: status pesanan TIDAK diupdate dari sini. Status
+        // "paid" yang sah cuma boleh datang dari webhook Midtrans (server-to-
+        // server, terverifikasi tanda tangannya) — bukan dari callback client
+        // kayak gini, yang bisa dipalsukan siapapun lewat console browser.
         trackPurchase(store, {
           orderId,
-          totalPrice,
+          totalPrice: checkoutData.grandTotal,
           items: items.map((i) => ({ productId: i.productId, name: i.name, quantity: i.quantity })),
         });
         onOrderComplete();

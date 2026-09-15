@@ -1,37 +1,15 @@
-import midtransClient from 'midtrans-client';
-
-const snap = new midtransClient.Snap({
-  isProduction: false,
-  serverKey: process.env.MIDTRANS_SERVER_KEY,
-});
-
-export async function POST(request) {
-  try {
-    const body = await request.json();
-    const { orderId, amount, customerName, customerEmail, customerPhone, items } = body;
-
-    const parameter = {
-      transaction_details: {
-        order_id: orderId,
-        gross_amount: amount,
-      },
-      customer_details: {
-        first_name: customerName,
-        email: customerEmail,
-        phone: customerPhone,
-      },
-      item_details: items,
-    };
-
-    const transaction = await snap.createTransaction(parameter);
-
-    return Response.json({ 
-      token: transaction.token,
-      redirect_url: transaction.redirect_url 
-    });
-
-  } catch (error) {
-    console.error('Midtrans error:', error);
-    return Response.json({ error: error.message }, { status: 500 });
-  }
+// Route ini SENGAJA dinonaktifkan. Pembuatan transaksi pembayaran sekarang
+// HARUS lewat /api/checkout, yang menghitung ulang harga/ongkir/diskon dari
+// database sendiri — bukan percaya begitu aja ke angka yang dikirim client.
+//
+// Route lama ini dulu nerima `amount` & `items` mentah-mentah dari body
+// request tanpa validasi apapun, artinya siapapun bisa modif harga lewat
+// DevTools/curl sebelum bikin transaksi. Daripada dihapus (bisa bikin bingung
+// kalau ada kode lama yang masih manggil), route ini sengaja dibiarkan ada
+// tapi langsung nolak semua request.
+export async function POST() {
+  return Response.json(
+    { error: "Endpoint ini udah gak dipakai. Gunakan /api/checkout." },
+    { status: 410 }
+  );
 }
