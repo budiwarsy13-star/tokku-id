@@ -2,30 +2,32 @@
 
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
-import { Bell, ShoppingBag, Wallet, AlertTriangle, Truck, CheckCircle2 } from "lucide-react";
+import { Bell, ShoppingBag, Wallet, AlertTriangle, Truck, CheckCircle2, MessageCircle, RotateCcw } from "lucide-react";
 
 const ICON_BY_TYPE = {
-  order_masuk: { icon: ShoppingBag, color: "#2563EB" },
-  pembayaran_masuk: { icon: Wallet, color: "#3B6D11" },
-  order_pending: { icon: AlertTriangle, color: "#B8860B" },
-  delivery_update: { icon: Truck, color: "#2563EB" },
-  pesanan_selesai: { icon: CheckCircle2, color: "#5B6472" },
+  order_masuk:      { icon: ShoppingBag,    color: "#2563EB" },
+  pembayaran_masuk: { icon: Wallet,         color: "#3B6D11" },
+  order_pending:    { icon: AlertTriangle,  color: "#B8860B" },
+  delivery_update:  { icon: Truck,          color: "#2563EB" },
+  pesanan_selesai:  { icon: CheckCircle2,   color: "#5B6472" },
+  chat_masuk:       { icon: MessageCircle,  color: "#7C3AED" }, // ← FIX: tipe baru
+  complaint:        { icon: AlertTriangle,  color: "#DC2626" },
+  return_request:   { icon: RotateCcw,      color: "#0369A1" },
 };
 
 function waktuRelatif(dateStr) {
   const diffMs = Date.now() - new Date(dateStr).getTime();
-  const menit = Math.floor(diffMs / 60000);
-  if (menit < 1) return "Baru saja";
+  const menit  = Math.floor(diffMs / 60000);
+  if (menit < 1)  return "Baru saja";
   if (menit < 60) return `${menit} menit lalu`;
-  const jam = Math.floor(menit / 60);
-  if (jam < 24) return `${jam} jam lalu`;
-  const hari = Math.floor(jam / 24);
-  return `${hari} hari lalu`;
+  const jam    = Math.floor(menit / 60);
+  if (jam  < 24) return `${jam} jam lalu`;
+  return `${Math.floor(jam / 24)} hari lalu`;
 }
 
 export default function NotificationBell({ storeId }) {
-  const [open, setOpen] = useState(false);
-  const [notifs, setNotifs] = useState([]);
+  const [open,    setOpen]    = useState(false);
+  const [notifs,  setNotifs]  = useState([]);
   const [loading, setLoading] = useState(true);
   const ref = useRef(null);
 
@@ -38,20 +40,23 @@ export default function NotificationBell({ storeId }) {
         .select("*")
         .eq("store_id", storeId)
         .order("created_at", { ascending: false })
-        .limit(20);
+        .limit(30);
       setNotifs(data || []);
       setLoading(false);
     }
     fetchNotifs();
 
-    // Realtime: notif baru langsung muncul tanpa refresh
     const channel = supabase
-      .channel(`notifications-${storeId}`)
-      .on(
-        "postgres_changes",
-        { event: "INSERT", schema: "public", table: "notifications", filter: `store_id=eq.${storeId}` },
-        (payload) => setNotifs((prev) => [payload.new, ...prev])
-      )
+      .channel(`notif-bell-${storeId}`)          // nama unik per storeId
+      .on("postgres_changes", {
+        event:  "INSERT",
+        schema: "public",
+        table:  "notifications",
+        filter: `store_id=eq.${storeId}`,
+      }, (payload) => {
+        setNotifs((prev) => [payload.new, ...prev]);
+        // Suara / getar opsional bisa ditambahkan di sini nanti
+      })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
@@ -69,9 +74,9 @@ export default function NotificationBell({ storeId }) {
 
   async function markAllRead() {
     if (unreadCount === 0) return;
-    const unreadIds = notifs.filter((n) => !n.is_read).map((n) => n.id);
+    const ids = notifs.filter((n) => !n.is_read).map((n) => n.id);
     setNotifs(notifs.map((n) => ({ ...n, is_read: true })));
-    await supabase.from("notifications").update({ is_read: true }).in("id", unreadIds);
+    await supabase.from("notifications").update({ is_read: true }).in("id", ids);
   }
 
   function toggleOpen() {
@@ -96,10 +101,14 @@ export default function NotificationBell({ storeId }) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-[#E5E2D9] shadow-lg z-50 max-h-96 overflow-y-auto">
-          <div className="px-4 py-3 border-b border-[#E5E2D9] sticky top-0 bg-white">
+        <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl border border-[#E5E2D9] shadow-lg z-50 max-h-[420px] overflow-y-auto">
+          <div className="px-4 py-3 border-b border-[#E5E2D9] sticky top-0 bg-white flex items-center justify-between">
             <h3 className="font-bold text-sm text-[#1C1C1A]">Notifikasi</h3>
+            {unreadCount > 0 && (
+              <span className="text-xs text-[#D85A30]">{unreadCount} belum dibaca</span>
+            )}
           </div>
+
           {loading ? (
             <p className="text-sm text-[#8B8D85] text-center py-8">Memuat...</p>
           ) : notifs.length === 0 ? (
@@ -109,20 +118,26 @@ export default function NotificationBell({ storeId }) {
               {notifs.map((n) => {
                 const meta = ICON_BY_TYPE[n.type] || ICON_BY_TYPE.order_masuk;
                 const Icon = meta.icon;
+                const clickable = !!n.url;
+                const Wrapper = clickable ? "a" : "div";
                 return (
-                  <div key={n.id} className={`flex gap-3 px-4 py-3 ${!n.is_read ? "bg-[#FAECE7]/40" : ""}`}>
+                  <Wrapper
+                    key={n.id}
+                    href={clickable ? n.url : undefined}
+                    className={`flex gap-3 px-4 py-3 ${!n.is_read ? "bg-[#FAECE7]/40" : ""} ${clickable ? "hover:bg-[#F9F7F5] cursor-pointer" : ""}`}
+                  >
                     <div
-                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+                      className="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5"
                       style={{ background: `${meta.color}1A` }}
                     >
                       <Icon size={15} style={{ color: meta.color }} strokeWidth={2} />
                     </div>
                     <div className="min-w-0">
                       <p className="text-sm font-medium text-[#1C1C1A]">{n.title}</p>
-                      <p className="text-xs text-[#5B6472] mt-0.5">{n.message}</p>
+                      <p className="text-xs text-[#5B6472] mt-0.5 line-clamp-2">{n.message}</p>
                       <p className="text-[10px] text-[#8B8D85] mt-1">{waktuRelatif(n.created_at)}</p>
                     </div>
-                  </div>
+                  </Wrapper>
                 );
               })}
             </div>

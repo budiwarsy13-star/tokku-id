@@ -3,6 +3,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import { useParams, useSearchParams } from "next/navigation";
+import { supabase } from "@/lib/supabase";
 import {
   ArrowLeft, CheckCircle2, Package, Truck, Clock, XCircle,
   MessageCircle, AlertTriangle, RotateCcw, Star, Send,
@@ -81,21 +82,61 @@ export default function PortalOrderDetail() {
     if (window.location.hash === "#ulasan") setActiveSection("ulasan");
   }, []);
 
+  // ── Realtime: terima balasan seller tanpa refresh ───────────
+  useEffect(() => {
+    if (!orderId) return;
+
+    const channel = supabase
+      .channel(`buyer-chat-${orderId}`)
+      .on("postgres_changes", {
+        event:  "INSERT",
+        schema: "public",
+        table:  "chats",
+        filter: `order_id=eq.${orderId}`,
+      }, (payload) => {
+        const msg = payload.new;
+        // Hanya proses pesan dari seller (pesan buyer sudah muncul saat dikirim)
+        if (msg.sender_type === "seller") {
+          setData((prev) => {
+            if (!prev) return prev;
+            return { ...prev, chats: [...(prev.chats || []), msg] };
+          });
+        }
+      })
+      .subscribe();
+
+    return () => supabase.removeChannel(channel);
+  }, [orderId]);
+
   async function kirimChat(e) {
     e.preventDefault();
     if (!chatMsg.trim() || !data?.order) return;
     setSendingChat(true);
+    const msgText = chatMsg.trim();
+    setChatMsg("");
+
+    // Optimistic update: tampilkan pesan langsung tanpa tunggu server
+    const tempMsg = {
+      id: `temp-${Date.now()}`,
+      order_id: orderId,
+      sender_type: "buyer",
+      sender_name: data.order.buyer_name,
+      message: msgText,
+      created_at: new Date().toISOString(),
+      is_read: false,
+    };
+    setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), tempMsg] }));
+
+    // Kirim ke server
     await fetch("/api/portal/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        orderId, message: chatMsg,
+        orderId, message: msgText,
         senderType: "buyer",
         senderName: data.order.buyer_name,
       }),
     });
-    setChatMsg("");
-    await loadData();
     setSendingChat(false);
   }
 
