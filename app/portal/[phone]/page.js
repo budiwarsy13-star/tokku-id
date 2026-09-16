@@ -9,11 +9,13 @@ import {
 } from "lucide-react";
 
 const TABS = [
-  { key: "perlu_dibayar",  label: "Perlu Dibayar",  icon: Clock,         statuses: ["pending"] },
-  { key: "dikirim",        label: "Dikirim",         icon: Truck,         statuses: ["dikirim","perlu_diproses"] },
-  { key: "akan_diterima",  label: "Akan Diterima",   icon: Package,       statuses: ["paid"] },
-  { key: "untuk_diulas",   label: "Untuk Diulas",    icon: Star,          statuses: ["selesai"] },
-  { key: "pengembalian",   label: "Pengembalian",    icon: RotateCcw,     statuses: ["return"] },
+  { key: "perlu_dibayar", label: "Perlu Dibayar", icon: Clock,     statuses: ["pending"] },
+  { key: "dikemas",       label: "Dikemas",        icon: Package,   statuses: ["paid"] },
+  // "paid" = sudah bayar, seller sedang mempersiapkan paket
+  { key: "dikirim",       label: "Dikirim",        icon: Truck,     statuses: ["shipped"] },
+  // "shipped" = paket sudah di tangan kurir, sedang dalam perjalanan
+  { key: "untuk_diulas",  label: "Untuk Diulas",   icon: Star,      statuses: ["selesai"] },
+  { key: "pengembalian",  label: "Pengembalian",   icon: RotateCcw, statuses: ["return"] },
 ];
 
 function rupiah(n) {
@@ -22,12 +24,12 @@ function rupiah(n) {
 
 function statusBadge(status) {
   const map = {
-    pending:          { label: "Menunggu Bayar",   bg: "#FEF3C7", color: "#92400E" },
-    paid:             { label: "Menunggu Kirim",   bg: "#DBEAFE", color: "#1E40AF" },
-    perlu_diproses:   { label: "Dikemas",          bg: "#E0F2FE", color: "#0369A1" },
-    dikirim:          { label: "Sedang Dikirim",   bg: "#DCFCE7", color: "#166534" },
-    selesai:          { label: "Selesai",          bg: "#F0FFF4", color: "#166534" },
-    dibatalkan:       { label: "Dibatalkan",       bg: "#FEE2E2", color: "#991B1B" },
+    pending:    { label: "Menunggu Bayar",  bg: "#FEF3C7", color: "#92400E" },
+    paid:       { label: "Dikemas",         bg: "#E0F2FE", color: "#0369A1" },
+    // paid = sudah bayar, penjual sedang mempersiapkan/mengemas
+    shipped:    { label: "Sedang Dikirim",  bg: "#DCFCE7", color: "#166534" },
+    selesai:    { label: "Selesai",         bg: "#F0FFF4", color: "#166534" },
+    dibatalkan: { label: "Dibatalkan",      bg: "#FEE2E2", color: "#991B1B" },
   };
   const s = map[status] || { label: status, bg: "#F1EFE8", color: "#5B6472" };
   return (
@@ -71,7 +73,6 @@ export default function PortalOrders() {
       return orders.filter((o) => o.status === "selesai" && !o.review_submitted);
     }
     if (tabKey === "pengembalian") {
-      // Tampilkan order yang punya return request (join nanti, untuk sekarang filter selesai saja)
       return orders.filter((o) => o.status === "selesai");
     }
     return orders.filter((o) => tab.statuses.includes(o.status));
