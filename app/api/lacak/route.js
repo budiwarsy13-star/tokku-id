@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
 
 // Server-side karena tabel orders gak punya policy select buat public (cuma
 // owner toko). Verifikasi butuh 2 data yang cuma diketahui pembeli: Order ID
@@ -15,6 +16,13 @@ function normalisasiTelepon(nomor) {
 
 export async function POST(request) {
   try {
+    // Maks 10 percobaan per menit per IP — cukup longgar buat orang yang
+    // beneran salah ketik, tapi nutup celah brute-force nebak Order ID orang lain.
+    const { allowed } = await cekRateLimit(supabaseAdmin, `lacak:${ambilIp(request)}`, 10);
+    if (!allowed) {
+      return Response.json({ found: false, message: "Kebanyakan percobaan. Coba lagi sebentar lagi." }, { status: 429 });
+    }
+
     const { orderId, buyerPhone } = await request.json();
     if (!orderId || !buyerPhone) {
       return Response.json({ found: false, message: "Isi Order ID dan nomor WA dulu ya." }, { status: 400 });

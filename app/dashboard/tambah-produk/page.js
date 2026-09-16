@@ -41,23 +41,36 @@ export default function TambahProduk() {
     init();
   }, []);
 
-  async function uploadFile(file, storeId) {
+  async function uploadFile(file, storeId, bucket) {
     const ext = file.name.split(".").pop();
     const path = `${storeId}/${Date.now()}-${Math.random().toString(36).slice(2, 8)}.${ext}`;
-    const { error } = await supabase.storage.from("Produk").upload(path, file);
+    const { error } = await supabase.storage.from(bucket).upload(path, file);
     if (error) throw error;
-    const { data } = supabase.storage.from("Produk").getPublicUrl(path);
+    const { data } = supabase.storage.from(bucket).getPublicUrl(path);
     return data.publicUrl;
   }
 
   async function handlePhotoSelect(e) {
     const files = Array.from(e.target.files || []);
     if (files.length === 0) return;
+
+    // Cek cepat di client biar user langsung tau kalau salah, TAPI batasan
+    // yang beneran mengikat itu di level bucket storage (server), bukan ini —
+    // ini cuma buat UX, bukan satu-satunya proteksi.
+    for (const file of files) {
+      if (!file.type.startsWith("image/")) {
+        return alert(`"${file.name}" bukan file gambar.`);
+      }
+      if (file.size > 5 * 1024 * 1024) {
+        return alert(`"${file.name}" kegedean (maks 5MB per foto).`);
+      }
+    }
+
     setUploadingPhoto(true);
     try {
       const urls = [];
       for (const file of files) {
-        const url = await uploadFile(file, store.id);
+        const url = await uploadFile(file, store.id, "Produk");
         urls.push(url);
       }
       setImages((prev) => [...prev, ...urls]);
@@ -75,9 +88,13 @@ export default function TambahProduk() {
   async function handleVideoSelect(e) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    if (!file.type.startsWith("video/")) return alert("File yang dipilih bukan video.");
+    if (file.size > 50 * 1024 * 1024) return alert("Video kegedean (maks 50MB).");
+
     setUploadingVideo(true);
     try {
-      const url = await uploadFile(file, store.id);
+      const url = await uploadFile(file, store.id, "ProdukVideo");
       setVideoUrl(url);
     } catch (err) {
       alert("Gagal upload video: " + err.message);

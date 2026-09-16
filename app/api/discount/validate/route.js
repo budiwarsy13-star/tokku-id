@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { validasiDiskon } from "@/lib/discount-server";
+import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
 
 // Pakai service role karena tabel discount_codes sengaja gak punya policy select
 // buat public — validasi HARUS lewat sini, gak boleh query langsung dari browser,
@@ -11,6 +12,13 @@ const supabaseAdmin = createClient(
 
 export async function POST(request) {
   try {
+    // Limit lebih longgar dari /api/lacak (20/menit) karena orang beneran bisa
+    // salah ketik kode beberapa kali — tapi tetep nutup enumerasi cepat/otomatis.
+    const { allowed } = await cekRateLimit(supabaseAdmin, `diskon:${ambilIp(request)}`, 20);
+    if (!allowed) {
+      return Response.json({ valid: false, message: "Kebanyakan percobaan. Coba lagi sebentar lagi." }, { status: 429 });
+    }
+
     const { code, storeId, subtotal } = await request.json();
     if (!code || !storeId || typeof subtotal !== "number") {
       return Response.json({ valid: false, message: "Data gak lengkap." }, { status: 400 });

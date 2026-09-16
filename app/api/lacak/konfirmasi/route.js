@@ -1,5 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
 import { kirimPush } from "@/lib/push-server";
+import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
 
 // Konfirmasi "pesanan diterima" dari sisi pembeli. Verifikasi ulang Order ID +
 // nomor WA (sama kayak /api/lacak) biar cuma pemilik pesanan yang bisa
@@ -15,6 +16,11 @@ function normalisasiTelepon(nomor) {
 
 export async function POST(request) {
   try {
+    const { allowed } = await cekRateLimit(supabaseAdmin, `konfirmasi:${ambilIp(request)}`, 10);
+    if (!allowed) {
+      return Response.json({ success: false, message: "Kebanyakan percobaan. Coba lagi sebentar lagi." }, { status: 429 });
+    }
+
     const { orderId, buyerPhone } = await request.json();
     if (!orderId || !buyerPhone) {
       return Response.json({ success: false, message: "Data gak lengkap." }, { status: 400 });
