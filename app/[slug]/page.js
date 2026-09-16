@@ -225,7 +225,7 @@ export default function TokoPublik() {
         <a href="/" className="font-medium hover:underline" style={{ color: accent }}>tokku.id</a>
         {" "}· Jualan langsung tanpa potongan marketplace
         <br />
-        <a href="/lacak" className="hover:underline mt-1 inline-block">Lacak pesanan kamu</a>
+        <a href="/portal" className="text-[#D85A30] hover:underline">Lacak pesanan kamu</a>
       </footer>
     </main>
   );
