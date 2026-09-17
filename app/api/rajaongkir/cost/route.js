@@ -1,4 +1,17 @@
+import { createClient } from "@supabase/supabase-js";
+import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
+
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
 export async function POST(request) {
+  const { allowed } = await cekRateLimit(supabaseAdmin, `rajaongkir:${ambilIp(request)}`, 50);
+  if (!allowed) {
+    return Response.json({ data: [] }, { status: 429 });
+  }
+
   const body = await request.json();
   const { origin, destination, weight } = body;
 

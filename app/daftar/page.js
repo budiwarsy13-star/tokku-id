@@ -322,9 +322,9 @@ export default function Daftar() {
                   <div className="relative">
                     <input
                       type={showPass ? "text" : "password"}
-                      required minLength={6} value={password}
+                      required minLength={8} value={password}
                       onChange={(e) => setPassword(e.target.value)}
-                      placeholder="Minimal 6 karakter"
+                      placeholder="Minimal 8 karakter"
                       className="w-full px-4 py-3.5 border-2 border-[#E5E2D9] rounded-2xl text-sm bg-white focus:outline-none focus:border-[#D85A30] transition-all pr-12 placeholder:text-[#C4C2BA]"
                     />
                     <button type="button" onClick={() => setShowPass(!showPass)}
