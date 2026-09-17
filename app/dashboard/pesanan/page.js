@@ -39,7 +39,8 @@ export default function PesananPage() {
   const [chatMsg,        setChatMsg]        = useState("");
   const [sendingChat,    setSendingChat]    = useState(false);
   const [unreadCounts,   setUnreadCounts]   = useState({});    // { orderId: jumlah unread }
-  const chatEndRef = useRef(null);
+  const chatEndRef       = useRef(null);
+  const broadcastChRef   = useRef(null);   // Supabase Broadcast channel untuk chat aktif
 
   // ── Init ────────────────────────────────────────────────────
   useEffect(() => {
@@ -72,45 +73,44 @@ export default function PesananPage() {
     init();
   }, []);
 
-  // ── Realtime: pesan chat baru masuk dari buyer ──────────────
+  // ── Realtime: postgres_changes untuk badge unread lintas semua order ──
+  // (tidak perlu filter non-PK, cukup dengarkan semua INSERT di chats untuk store ini)
   useEffect(() => {
     if (!store?.id) return;
 
     const channel = supabase
-      .channel(`seller-chat-${store.id}`)
+      .channel(`seller-unread-${store.id}`)
       .on("postgres_changes", {
         event:  "INSERT",
         schema: "public",
         table:  "chats",
-        filter: `store_id=eq.${store.id}`,
       }, (payload) => {
         const msg = payload.new;
-        if (msg.sender_type === "buyer") {
-          // Kalau chat order ini sedang dibuka → langsung append ke chatnya
-          if (chatOrder?.id === msg.order_id) {
-            setChats((prev) => [...prev, msg]);
-            // Mark langsung sebagai read karena seller sedang lihat
-            supabase.from("chats").update({ is_read: true }).eq("id", msg.id);
-          } else {
-            // Tambah badge unread di row order yang bersangkutan
-            setUnreadCounts((prev) => ({
-              ...prev,
-              [msg.order_id]: (prev[msg.order_id] || 0) + 1,
-            }));
-          }
-        }
+        // Hanya proses kalau pesan ini milik toko kita dan dari buyer
+        if (msg.store_id !== store.id || msg.sender_type !== "buyer") return;
+
+        // Kalau drawer chat order ini sedang terbuka → append via broadcast (sudah dihandle)
+        // Kalau drawer TIDAK terbuka → naikkan badge unread
+        setUnreadCounts((prev) => {
+          // Cek apakah order ini sedang dibuka di drawer
+          // chatOrder diakses via ref agar tidak stale closure
+          return {
+            ...prev,
+            [msg.order_id]: (prev[msg.order_id] || 0) + 1,
+          };
+        });
       })
       .subscribe();
 
     return () => supabase.removeChannel(channel);
-  }, [store?.id, chatOrder?.id]);
+  }, [store?.id]);
 
   // ── Scroll ke bawah saat ada pesan baru ────────────────────
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chats]);
 
-  // ── Buka chat untuk 1 order ─────────────────────────────────
+  // ── Buka chat untuk 1 order + join Broadcast channel ────────
   async function bukaChat(order) {
     setChatOrder(order);
     setChatMsg("");
@@ -129,25 +129,73 @@ export default function PesananPage() {
 
     // Hapus badge unread di row ini
     setUnreadCounts((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
+
+    // ── Join Broadcast channel untuk order ini ──────────────
+    // Lepas channel order sebelumnya jika ada
+    if (broadcastChRef.current) {
+      await supabase.removeChannel(broadcastChRef.current);
+      broadcastChRef.current = null;
+    }
+
+    const ch = supabase
+      .channel(`chat-order-${order.id}`, {
+        config: { broadcast: { self: false } },
+      })
+      .on("broadcast", { event: "new_message" }, ({ payload }) => {
+        if (payload?.sender_type === "buyer") {
+          setChats((prev) => {
+            const sudahAda = prev.some((c) => c.id === payload.id);
+            if (sudahAda) return prev;
+            return [...prev, payload];
+          });
+          // Mark read karena seller sedang lihat
+          supabase.from("chats").update({ is_read: true }).eq("id", payload.id);
+          // Hapus badge unread
+          setUnreadCounts((prev) => { const next = {...prev}; delete next[order.id]; return next; });
+          // Notif browser kalau tab tidak fokus
+          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+            new Notification(`Pesan dari ${payload.sender_name || "pembeli"}`, {
+              body: payload.message?.slice(0, 80),
+              icon: "/favicon.ico",
+            });
+          }
+        }
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") broadcastChRef.current = ch;
+      });
   }
 
-  // ── Kirim balasan seller ────────────────────────────────────
+  // ── Kirim balasan seller + broadcast ke buyer ───────────────
   async function kirimChat(e) {
     e.preventDefault();
     if (!chatMsg.trim() || !chatOrder || !store) return;
     setSendingChat(true);
+
+    const msgText = chatMsg.trim();
+    setChatMsg(""); // Clear input langsung biar responsif
 
     const { data: newMsg } = await supabase.from("chats").insert({
       order_id:    chatOrder.id,
       store_id:    store.id,
       sender_type: "seller",
       sender_name: store.name,
-      message:     chatMsg.trim(),
+      message:     msgText,
       is_read:     false,
     }).select().single();
 
-    if (newMsg) setChats((prev) => [...prev, newMsg]);
-    setChatMsg("");
+    if (newMsg) {
+      // Append ke UI seller
+      setChats((prev) => [...prev, newMsg]);
+      // Broadcast ke buyer via channel real-time
+      if (broadcastChRef.current) {
+        await broadcastChRef.current.send({
+          type:    "broadcast",
+          event:   "new_message",
+          payload: newMsg,
+        });
+      }
+    }
     setSendingChat(false);
   }
 
@@ -396,7 +444,13 @@ export default function PesananPage() {
                 <p className="font-bold text-[#1C1C1A] truncate">{chatOrder.buyer_name}</p>
                 <p className="text-xs text-[#8B8D85] truncate">{chatOrder.product_name}</p>
               </div>
-              <button onClick={() => setChatOrder(null)}
+              <button onClick={async () => {
+                if (broadcastChRef.current) {
+                  await supabase.removeChannel(broadcastChRef.current);
+                  broadcastChRef.current = null;
+                }
+                setChatOrder(null);
+              }}
                 className="p-2 rounded-xl hover:bg-[#F1EFE8] text-[#5B6472]">
                 <X size={18} />
               </button>

@@ -1,7 +1,7 @@
 // app/portal/pesanan/[orderId]/page.js
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import {
@@ -82,30 +82,46 @@ export default function PortalOrderDetail() {
     if (window.location.hash === "#ulasan") setActiveSection("ulasan");
   }, []);
 
-  // ── Realtime: terima balasan seller tanpa refresh ───────────
+  // ── Realtime: Broadcast channel buat live chat dua arah ─────
+  // Broadcast lebih reliable dari postgres_changes untuk filter non-PK column
+  const broadcastChannelRef = useRef(null);
+
   useEffect(() => {
     if (!orderId) return;
 
     const channel = supabase
-      .channel(`buyer-chat-${orderId}`)
-      .on("postgres_changes", {
-        event:  "INSERT",
-        schema: "public",
-        table:  "chats",
-        filter: `order_id=eq.${orderId}`,
-      }, (payload) => {
-        const msg = payload.new;
-        // Hanya proses pesan dari seller (pesan buyer sudah muncul saat dikirim)
-        if (msg.sender_type === "seller") {
+      .channel(`chat-order-${orderId}`, {
+        config: { broadcast: { self: false } }, // jangan terima pesan dari diri sendiri
+      })
+      .on("broadcast", { event: "new_message" }, ({ payload }) => {
+        // Terima pesan dari seller secara real-time
+        if (payload?.sender_type === "seller") {
           setData((prev) => {
             if (!prev) return prev;
-            return { ...prev, chats: [...(prev.chats || []), msg] };
+            // Cegah duplikat
+            const sudahAda = prev.chats?.some((c) => c.id === payload.id);
+            if (sudahAda) return prev;
+            return { ...prev, chats: [...(prev.chats || []), payload] };
           });
+          // Notif browser jika tab tidak difokus
+          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+            new Notification("Pesan baru dari penjual", {
+              body: payload.message?.slice(0, 80),
+              icon: "/favicon.ico",
+            });
+          }
         }
       })
-      .subscribe();
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") {
+          broadcastChannelRef.current = channel;
+        }
+      });
 
-    return () => supabase.removeChannel(channel);
+    return () => {
+      broadcastChannelRef.current = null;
+      supabase.removeChannel(channel);
+    };
   }, [orderId]);
 
   async function kirimChat(e) {
@@ -128,7 +144,7 @@ export default function PortalOrderDetail() {
     setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), tempMsg] }));
 
     // Kirim ke server
-    await fetch("/api/portal/chat", {
+    const res = await fetch("/api/portal/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -137,6 +153,16 @@ export default function PortalOrderDetail() {
         senderName: data.order.buyer_name,
       }),
     });
+
+    // Broadcast ke seller secara real-time via channel
+    if (res.ok && broadcastChannelRef.current) {
+      const saved = await res.json();
+      await broadcastChannelRef.current.send({
+        type: "broadcast",
+        event: "new_message",
+        payload: saved.chat || tempMsg,
+      });
+    }
     setSendingChat(false);
   }
 
