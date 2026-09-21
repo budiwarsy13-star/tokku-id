@@ -72,6 +72,26 @@ export default function PortalOrderDetail() {
     setData(d);
     setLoading(false);
     if (d.review) setReviewDone(true);
+
+    // Fetch FAQ templates dari toko
+    if (d?.order?.store_id) {
+      const tmplRes = await fetch(`/api/portal/chat-templates?storeId=${d.order.store_id}`);
+      const tmplData = await tmplRes.json();
+      setTemplates(tmplData.templates || []);
+
+      // Init welcome message jika chat masih kosong
+      if (!d.chats || d.chats.length === 0) {
+        await fetch("/api/portal/chat", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId, storeId: d.order.store_id }),
+        });
+        // Reload supaya welcome message muncul
+        const r2 = await fetch(`/api/portal/orders?orderId=${orderId}`);
+        const d2 = await r2.json();
+        setData(d2);
+      }
+    }
   }
 
   useEffect(() => { loadData(); }, [orderId]);
@@ -123,6 +143,47 @@ export default function PortalOrderDetail() {
       supabase.removeChannel(channel);
     };
   }, [orderId]);
+
+  // Buyer klik FAQ → kirim question sebagai pesan buyer, lalu bot auto-reply
+  async function handleFAQ(template) {
+    if (!data?.order || botSending) return;
+    setBotSending(true);
+
+    // Kirim pertanyaan dari buyer
+    const qRes = await fetch("/api/portal/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId, message: template.question,
+        senderType: "buyer", senderName: data.order.buyer_name,
+      }),
+    });
+    const qData = await qRes.json();
+    if (qData.chat) {
+      setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), qData.chat] }));
+      // Broadcast pertanyaan buyer ke seller
+      if (broadcastChannelRef.current) {
+        await broadcastChannelRef.current.send({
+          type: "broadcast", event: "new_message", payload: qData.chat,
+        });
+      }
+    }
+
+    // Delay singkat supaya terasa natural, baru kirim auto-reply
+    await new Promise((r) => setTimeout(r, 600));
+
+    const aRes = await fetch("/api/portal/chat", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        orderId, message: template.answer,
+        senderType: "bot", senderName: "Pesan Otomatis",
+      }),
+    });
+    const aData = await aRes.json();
+    if (aData.chat) {
+      setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), aData.chat] }));
+    }
+    setBotSending(false);
+  }
 
   async function kirimChat(e) {
     e.preventDefault();
@@ -456,30 +517,77 @@ export default function PortalOrderDetail() {
         {activeSection === "chat" && (
           <div className="flex flex-col h-[65vh]">
             <div className="flex-1 overflow-y-auto space-y-3 pb-4">
-              {chats.length === 0 ? (
+              {chats.length === 0 && !botSending ? (
                 <div className="text-center py-10">
                   <MessageCircle size={28} className="mx-auto mb-2 text-[#E5E2D9]" />
-                  <p className="text-sm text-[#8B8D85]">Belum ada pesan. Tanya sesuatu ke penjual!</p>
+                  <p className="text-sm text-[#8B8D85]">Memuat pesan...</p>
                 </div>
               ) : chats.map((c) => (
                 <div key={c.id} className={`flex ${c.sender_type === "buyer" ? "justify-end" : "justify-start"}`}>
-                  <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
-                    c.sender_type === "buyer"
-                      ? "bg-[#D85A30] text-white rounded-br-sm"
-                      : "bg-white border border-[#E5E2D9] text-[#1C1C1A] rounded-bl-sm"
-                  }`}>
-                    {c.sender_type === "seller" && (
-                      <p className="text-[10px] font-bold mb-1" style={{ color: accentColor }}>{store.name}</p>
-                    )}
-                    <p className="text-sm">{c.message}</p>
-                    <p className={`text-[10px] mt-1 ${c.sender_type === "buyer" ? "text-white/60" : "text-[#8B8D85]"}`}>
-                      {new Date(c.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
-                    </p>
-                  </div>
+                  {c.sender_type === "bot" ? (
+                    // Pesan bot: desain khusus dengan ikon robot
+                    <div className="max-w-[85%] bg-[#F1EFE8] border border-[#E5E2D9] rounded-2xl rounded-bl-sm px-4 py-2.5">
+                      <p className="text-[10px] font-bold text-[#8B8D85] mb-1 flex items-center gap-1">
+                        🤖 Pesan Otomatis
+                      </p>
+                      <p className="text-sm text-[#1C1C1A] whitespace-pre-line">{c.message}</p>
+                      <p className="text-[10px] text-[#8B8D85] mt-1">
+                        {new Date(c.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  ) : (
+                    <div className={`max-w-[75%] rounded-2xl px-4 py-2.5 ${
+                      c.sender_type === "buyer"
+                        ? "bg-[#D85A30] text-white rounded-br-sm"
+                        : "bg-white border border-[#E5E2D9] text-[#1C1C1A] rounded-bl-sm"
+                    }`}>
+                      {c.sender_type === "seller" && (
+                        <p className="text-[10px] font-bold mb-1" style={{ color: accentColor }}>{store.name}</p>
+                      )}
+                      <p className="text-sm">{c.message}</p>
+                      <p className={`text-[10px] mt-1 ${c.sender_type === "buyer" ? "text-white/60" : "text-[#8B8D85]"}`}>
+                        {new Date(c.created_at).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}
+                      </p>
+                    </div>
+                  )}
                 </div>
               ))}
               <div ref={chatEndRef} />
             </div>
+
+            {/* ── FAQ Quick Replies ─────────────────────────── */}
+            {templates.filter((t) => t.type === "faq").length > 0 && (
+              <div className="pt-3 border-t border-[#F1EFE8]">
+                <p className="text-[10px] text-[#8B8D85] mb-2 font-medium uppercase tracking-wider">
+                  Pertanyaan umum
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {templates.filter((t) => t.type === "faq").map((t) => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => handleFAQ(t)}
+                      disabled={botSending}
+                      className="text-xs px-3 py-1.5 rounded-full border border-[#E5E2D9] bg-white hover:border-[#D85A30] hover:text-[#D85A30] transition-colors disabled:opacity-50 text-left"
+                    >
+                      {t.question}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {botSending && (
+              <div className="flex items-center gap-2 py-2">
+                <div className="flex gap-1">
+                  {[0,1,2].map((i) => (
+                    <div key={i} className="w-1.5 h-1.5 bg-[#8B8D85] rounded-full animate-bounce"
+                      style={{ animationDelay: `${i * 0.15}s` }} />
+                  ))}
+                </div>
+                <span className="text-xs text-[#8B8D85]">Mengetik balasan...</span>
+              </div>
+            )}
 
             <form onSubmit={kirimChat} className="flex gap-2 pt-3 border-t border-[#E5E2D9]">
               <input
