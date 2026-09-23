@@ -34,10 +34,16 @@ export default function ProdukPage() {
       activeMenu="/dashboard/produk"
       headerTitle="Produk"
       headerRight={
-        <a href="/dashboard/tambah-produk"
-          className="text-sm bg-[#D85A30] text-white px-4 py-2 rounded-lg hover:bg-[#B84A25] transition-colors whitespace-nowrap">
-          + Tambah produk
-        </a>
+        <div className="flex items-center gap-2">
+          <a href="/dashboard/produk/import"
+            className="text-sm border border-[#E5E2D9] text-[#1C1C1A] px-4 py-2 rounded-lg hover:border-[#D85A30] transition-colors whitespace-nowrap">
+            Import CSV
+          </a>
+          <a href="/dashboard/tambah-produk"
+            className="text-sm bg-[#D85A30] text-white px-4 py-2 rounded-lg hover:bg-[#B84A25] transition-colors whitespace-nowrap">
+            + Tambah produk
+          </a>
+        </div>
       }
     >
       <div className="bg-white rounded-xl border border-[#E5E2D9] p-4 md:p-6">
