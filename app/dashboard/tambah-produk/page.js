@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
-import { X, Upload, Video } from "lucide-react";
+import { X, Upload, Video, Sparkles, Copy, Check, Loader2 } from "lucide-react";
 
 export default function TambahProduk() {
   const [store, setStore] = useState(null);
@@ -25,6 +25,13 @@ export default function TambahProduk() {
 
   const [adaVarian, setAdaVarian] = useState(false);
   const [variants, setVariants] = useState([{ name: "", sku: "", price: "", stock: "" }]);
+
+  // AI Copywriter
+  const [aiNotes, setAiNotes] = useState("");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiResult, setAiResult] = useState(null);
+  const [aiError, setAiError] = useState("");
+  const [copiedField, setCopiedField] = useState("");
 
   const photoInputRef = useRef();
   const videoInputRef = useRef();
@@ -101,6 +108,47 @@ export default function TambahProduk() {
     }
     setUploadingVideo(false);
     e.target.value = "";
+  }
+
+  async function generateAI() {
+    if (!name.trim()) {
+      setAiError("Isi nama produk dulu ya, minimal itu, biar AI ada bahan.");
+      return;
+    }
+    setAiError("");
+    setAiLoading(true);
+    setAiResult(null);
+
+    const { data: sessionData } = await supabase.auth.getSession();
+    const token = sessionData?.session?.access_token;
+    if (!token) {
+      setAiError("Sesi login habis, coba refresh halaman.");
+      setAiLoading(false);
+      return;
+    }
+
+    try {
+      const res = await fetch("/api/ai/copywriter", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ name, category, notes: aiNotes, imageUrl: images[0] || null }),
+      });
+      const data = await res.json();
+      if (!data.success) {
+        setAiError(data.message || "Gagal generate.");
+      } else {
+        setAiResult(data.hasil);
+      }
+    } catch (err) {
+      setAiError(err.message);
+    }
+    setAiLoading(false);
+  }
+
+  function salinTeks(field, text) {
+    navigator.clipboard.writeText(text);
+    setCopiedField(field);
+    setTimeout(() => setCopiedField(""), 1500);
   }
 
   function updateVariant(index, field, value) {
@@ -217,6 +265,81 @@ export default function TambahProduk() {
             </div>
             <input ref={photoInputRef} type="file" accept="image/*" multiple className="hidden" onChange={handlePhotoSelect} />
             <p className="text-xs text-[#8B8D85] mt-2">Foto pertama jadi foto utama. Bisa upload beberapa sekaligus.</p>
+          </div>
+
+          {/* AI Copywriter */}
+          <div className="border border-[#F0D9CC] bg-[#FDF8F5] rounded-xl p-4">
+            <div className="flex items-center gap-2 mb-2">
+              <Sparkles size={16} className="text-[#D85A30]" />
+              <span className="text-sm font-semibold text-[#1C1C1A]">AI Copywriter</span>
+            </div>
+            <p className="text-xs text-[#8B8D85] mb-3">
+              Udah isi nama produk (+ upload foto biar lebih akurat)? Tambahin catatan singkat kalau perlu (bahan, target pembeli, dll), terus generate.
+            </p>
+            <textarea value={aiNotes} onChange={(e) => setAiNotes(e.target.value)} rows={2}
+              className="w-full px-3 py-2 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30] mb-3 bg-white"
+              placeholder="Contoh: bahan katun combed 24s, cocok buat cewek umur 18-30 tahun (opsional)" />
+            <button type="button" onClick={generateAI} disabled={aiLoading}
+              className="text-sm bg-[#D85A30] text-white px-4 py-2 rounded-lg hover:bg-[#B84A25] disabled:opacity-50 transition-colors flex items-center gap-2">
+              {aiLoading ? <Loader2 size={15} className="animate-spin" /> : <Sparkles size={15} />}
+              {aiLoading ? "Lagi mikir..." : "Generate dengan AI"}
+            </button>
+            {aiError && <p className="text-xs text-[#A32D2D] mt-2">{aiError}</p>}
+
+            {aiResult && (
+              <div className="mt-4 space-y-3 border-t border-[#F0D9CC] pt-4">
+                {/* Judul */}
+                <div className="bg-white rounded-lg border border-[#E5E2D9] p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-[#5B6472]">Judul disaranin</span>
+                    <button type="button" onClick={() => setName(aiResult.judul)} className="text-xs text-[#D85A30] hover:underline">Pakai judul ini</button>
+                  </div>
+                  <p className="text-sm text-[#1C1C1A]">{aiResult.judul}</p>
+                </div>
+
+                {/* Deskripsi */}
+                <div className="bg-white rounded-lg border border-[#E5E2D9] p-3">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-semibold text-[#5B6472]">Deskripsi</span>
+                    <button type="button" onClick={() => setDescription(aiResult.deskripsi)} className="text-xs text-[#D85A30] hover:underline">Pakai deskripsi ini</button>
+                  </div>
+                  <p className="text-sm text-[#1C1C1A] whitespace-pre-line">{aiResult.deskripsi}</p>
+                  {aiResult.keunggulan?.length > 0 && (
+                    <ul className="mt-2 space-y-1">
+                      {aiResult.keunggulan.map((k, i) => (
+                        <li key={i} className="text-xs text-[#5B6472] flex gap-1.5"><span>•</span>{k}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+
+                {/* Captions */}
+                {[
+                  ["caption_instagram", "Caption Instagram"],
+                  ["caption_tiktok", "Caption TikTok"],
+                  ["caption_whatsapp", "Broadcast WhatsApp"],
+                ].map(([key, label]) => aiResult[key] && (
+                  <div key={key} className="bg-white rounded-lg border border-[#E5E2D9] p-3">
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-xs font-semibold text-[#5B6472]">{label}</span>
+                      <button type="button" onClick={() => salinTeks(key, aiResult[key])}
+                        className="text-xs text-[#D85A30] hover:underline flex items-center gap-1">
+                        {copiedField === key ? <><Check size={12} /> Disalin</> : <><Copy size={12} /> Salin</>}
+                      </button>
+                    </div>
+                    <p className="text-sm text-[#1C1C1A] whitespace-pre-line">{aiResult[key]}</p>
+                  </div>
+                ))}
+
+                {aiResult.hashtags?.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {aiResult.hashtags.map((h, i) => (
+                      <span key={i} className="text-xs bg-[#FAECE7] text-[#D85A30] px-2 py-1 rounded-full">{h}</span>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div>

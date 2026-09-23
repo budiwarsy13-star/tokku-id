@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import {
-  LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag, Menu, X
+  LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag, Menu, X, Sparkles
 } from "lucide-react";
 
 const menuItems = [
@@ -12,6 +12,7 @@ const menuItems = [
   { icon: Package,         label: "Produk",          href: "/dashboard/produk" },
   { icon: ShoppingBag,     label: "Pesanan",         href: "/dashboard/pesanan" },
   { icon: Tag,             label: "Diskon",          href: "/dashboard/diskon" },
+  { icon: Sparkles,        label: "Insight AI",      href: "/dashboard/insight" },
   { icon: Store,           label: "Pengaturan toko", href: "/dashboard/toko" },
 ];
 

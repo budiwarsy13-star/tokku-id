@@ -3,6 +3,10 @@
     {
       "path": "/api/cron/cek-pending",
       "schedule": "0 3 * * *"
+    },
+    {
+      "path": "/api/cron/insight-mingguan",
+      "schedule": "0 23 * * 0"
     }
   ]
 }
