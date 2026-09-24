@@ -9,7 +9,7 @@
 // ini ngecek kapan insight TERAKHIR beneran berhasil dibuat).
 
 import { createClient } from "@supabase/supabase-js";
-import { generateInsightMingguan } from "@/lib/insight-server";
+import { generateInsight } from "@/lib/insight-server";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -35,10 +35,14 @@ export async function POST(request) {
       .from("stores").select("id").eq("user_id", userData.user.id).maybeSingle();
     if (!store) return Response.json({ success: false, message: "Kamu belum punya toko." }, { status: 404 });
 
+    const { periodType } = await request.json().catch(() => ({}));
+    const tipe = periodType === "mingguan" ? "mingguan" : "harian";
+
     const { data: terakhir } = await supabaseAdmin
       .from("ai_insights")
       .select("created_at")
       .eq("store_id", store.id)
+      .eq("period_type", tipe)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -51,7 +55,7 @@ export async function POST(request) {
       );
     }
 
-    const insight = await generateInsightMingguan(supabaseAdmin, store.id);
+    const insight = await generateInsight(supabaseAdmin, store.id, tipe);
     return Response.json({ success: true, insight });
   } catch (error) {
     console.error("Manual insight generate error:", error);

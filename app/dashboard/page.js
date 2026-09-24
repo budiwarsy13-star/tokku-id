@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import PushOptIn from "@/components/PushOptIn";
+import InsightPopup from "@/components/InsightPopup";
 import { Package, ShoppingBag, Wallet, TrendingUp } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 
@@ -241,6 +242,7 @@ function DashboardShell({ store }) {
   return (
     <DashboardLayout store={store} activeMenu="/dashboard">
       <div className="max-w-5xl">
+        <InsightPopup store={store} />
         <PushOptIn />
         <OnboardingGuide store={store} />
 

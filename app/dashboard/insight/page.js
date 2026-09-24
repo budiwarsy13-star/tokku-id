@@ -46,6 +46,7 @@ export default function InsightPage() {
       const res = await fetch("/api/insight/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ periodType: "harian" }),
       });
       const data = await res.json();
       if (!data.success) {
@@ -124,6 +125,9 @@ export default function InsightPage() {
                   <button onClick={() => setExpandedId(expandedId === r.id ? null : r.id)}
                     className="w-full flex items-center justify-between px-4 py-3 text-sm text-left">
                     <span className="text-[#1C1C1A]">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded mr-2 ${r.period_type === "harian" ? "bg-[#EAF3DE] text-[#3B6D11]" : "bg-[#FAECE7] text-[#D85A30]"}`}>
+                        {r.period_type === "harian" ? "HARIAN" : "MINGGUAN"}
+                      </span>
                       {new Date(r.created_at).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}
                       <span className="text-[#8B8D85]"> · {(r.insights || []).length} insight</span>
                     </span>
