@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import OnboardingGuide from "@/components/OnboardingGuide";
 import PushOptIn from "@/components/PushOptIn";
 import InsightPopup from "@/components/InsightPopup";
+import YangPerluDilakukan from "@/components/YangPerluDilakukan";
 import { Package, ShoppingBag, Wallet, TrendingUp } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 
@@ -243,6 +244,7 @@ function DashboardShell({ store }) {
     <DashboardLayout store={store} activeMenu="/dashboard">
       <div className="max-w-5xl">
         <InsightPopup store={store} />
+        <YangPerluDilakukan store={store} />
         <PushOptIn />
         <OnboardingGuide store={store} />
 

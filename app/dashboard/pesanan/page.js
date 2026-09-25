@@ -10,18 +10,22 @@ import {
 } from "lucide-react";
 
 const STATUS_LABEL = {
-  pending:  { label: "Menunggu",   color: "bg-[#FFF4E0] text-[#B8860B]" },
-  paid:     { label: "Dibayar",    color: "bg-[#EAF1E8] text-[#3B6D11]" },
-  shipped:  { label: "Dikirim",    color: "bg-[#E8F0FA] text-[#2563EB]" },
-  selesai:  { label: "Selesai",    color: "bg-[#F1EFE8] text-[#5B6472]" },
-  gagal:    { label: "Dibatalkan", color: "bg-[#FBEAEA] text-[#A32D2D]" },
+  pending:      { label: "Menunggu",       color: "bg-[#FFF4E0] text-[#B8860B]" },
+  paid:         { label: "Dibayar",        color: "bg-[#EAF1E8] text-[#3B6D11]" },
+  shipped:      { label: "Dikirim",        color: "bg-[#E8F0FA] text-[#2563EB]" },
+  selesai:      { label: "Selesai",        color: "bg-[#F1EFE8] text-[#5B6472]" },
+  gagal:        { label: "Dibatalkan",     color: "bg-[#FBEAEA] text-[#A32D2D]" },
+  perlu_review: { label: "Perlu review",   color: "bg-[#FCEFE3] text-[#B8600B]" },
+  return:       { label: "Retur",          color: "bg-[#F1EFE8] text-[#5B6472]" },
 };
 
 const TABS = [
   { key: "semua",         label: "Semua",          match: () => true },
+  { key: "menunggu",      label: "Menunggu bayar", match: (o) => o.status === "pending" },
   { key: "perlu_diproses",label: "Perlu diproses", match: (o) => o.status === "paid" },
   { key: "dikirim",       label: "Sedang dikirim", match: (o) => o.status === "shipped" },
   { key: "selesai",       label: "Selesai",        match: (o) => o.status === "selesai" },
+  { key: "review",        label: "Perlu review",   match: (o) => o.status === "perlu_review" },
   { key: "dibatalkan",    label: "Dibatalkan",     match: (o) => o.status === "gagal" },
 ];
 
@@ -44,6 +48,11 @@ export default function PesananPage() {
 
   // ── Init ────────────────────────────────────────────────────
   useEffect(() => {
+    // Baca ?tab= dari URL — dipake widget "Yang Perlu Dilakukan" di
+    // dashboard buat langsung nge-link ke tab yang relevan.
+    const tabDariUrl = new URLSearchParams(window.location.search).get("tab");
+    if (tabDariUrl && TABS.some((t) => t.key === tabDariUrl)) setActiveTab(tabDariUrl);
+
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { window.location.href = "/masuk"; return; }

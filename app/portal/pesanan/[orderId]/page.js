@@ -48,6 +48,8 @@ export default function PortalOrderDetail() {
   // Chat state
   const [chatMsg, setChatMsg] = useState("");
   const [sendingChat, setSendingChat] = useState(false);
+  const [templates, setTemplates] = useState([]);
+  const [botSending, setBotSending] = useState(false);
   const chatEndRef = useRef(null);
   // Review state
   const [rating, setRating] = useState(0);
