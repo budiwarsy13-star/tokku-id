@@ -50,8 +50,11 @@ export default function PesananPage() {
   useEffect(() => {
     // Baca ?tab= dari URL — dipake widget "Yang Perlu Dilakukan" di
     // dashboard buat langsung nge-link ke tab yang relevan.
-    const tabDariUrl = new URLSearchParams(window.location.search).get("tab");
+    const paramUrl = new URLSearchParams(window.location.search);
+    const tabDariUrl = paramUrl.get("tab");
     if (tabDariUrl && TABS.some((t) => t.key === tabDariUrl)) setActiveTab(tabDariUrl);
+    const searchDariUrl = paramUrl.get("search");
+    if (searchDariUrl) setSearch(searchDariUrl);
 
     async function init() {
       const { data: { user } } = await supabase.auth.getUser();
@@ -263,6 +266,7 @@ export default function PesananPage() {
       if (!q) return true;
       return (
         o.buyer_name?.toLowerCase().includes(q) ||
+        o.buyer_phone?.toLowerCase().includes(q) ||
         o.product_name?.toLowerCase().includes(q) ||
         o.midtrans_order_id?.toLowerCase().includes(q) ||
         o.id?.toLowerCase().includes(q)

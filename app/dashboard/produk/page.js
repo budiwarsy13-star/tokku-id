@@ -35,6 +35,10 @@ export default function ProdukPage() {
       headerTitle="Produk"
       headerRight={
         <div className="flex items-center gap-2">
+          <a href="/dashboard/produk/kelola-harga"
+            className="text-sm border border-[#E5E2D9] text-[#1C1C1A] px-4 py-2 rounded-lg hover:border-[#D85A30] transition-colors whitespace-nowrap">
+            Kelola Harga
+          </a>
           <a href="/dashboard/produk/import"
             className="text-sm border border-[#E5E2D9] text-[#1C1C1A] px-4 py-2 rounded-lg hover:border-[#D85A30] transition-colors whitespace-nowrap">
             Import CSV
