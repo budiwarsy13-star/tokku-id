@@ -4,12 +4,13 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import {
-  LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag, Menu, X, Sparkles, BarChart3, Users
+  LayoutDashboard, Package, ShoppingBag, Store, LogOut, Tag, Menu, X, Sparkles, BarChart3, Users, Boxes
 } from "lucide-react";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Ringkasan",       href: "/dashboard" },
   { icon: Package,         label: "Produk",          href: "/dashboard/produk" },
+  { icon: Boxes,           label: "Inventori",       href: "/dashboard/inventori" },
   { icon: ShoppingBag,     label: "Pesanan",         href: "/dashboard/pesanan" },
   { icon: Tag,             label: "Diskon",          href: "/dashboard/diskon" },
   { icon: BarChart3,       label: "Laporan",         href: "/dashboard/laporan" },

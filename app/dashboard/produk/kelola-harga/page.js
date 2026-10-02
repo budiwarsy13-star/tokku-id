@@ -5,6 +5,19 @@ import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Loader2, Check } from "lucide-react";
 
+async function catatLogStokClient(storeId, productId, productName, stokSebelum, stokSesudah) {
+  if (stokSebelum === stokSesudah) return;
+  try {
+    await supabase.from("stock_logs").insert({
+      store_id: storeId, product_id: productId, product_name: productName, variant_name: null,
+      tipe: "penyesuaian_manual", perubahan: stokSesudah - stokSebelum,
+      stok_sebelum: stokSebelum, stok_sesudah: stokSesudah, catatan: "Diubah lewat Kelola Harga",
+    });
+  } catch (err) {
+    console.error("Gagal catat log stok:", err.message);
+  }
+}
+
 function totalStokProduk(p) {
   return (p.variants || []).length > 0 ? p.variants.reduce((s, v) => s + (v.stock || 0), 0) : (p.stock || 0);
 }
@@ -91,10 +104,16 @@ export default function KelolaHargaPage() {
     setSukses(false);
 
     await Promise.all(idBerubah.map((id) => {
+      const produkLama = products.find((p) => p.id === id);
       const payload = {};
       if (ubahan[id].price !== undefined && ubahan[id].price !== "") payload.price = ubahan[id].price;
       if (ubahan[id].stock !== undefined && ubahan[id].stock !== "") payload.stock = ubahan[id].stock;
-      return supabase.from("products").update(payload).eq("id", id);
+
+      return supabase.from("products").update(payload).eq("id", id).then(() => {
+        if (payload.stock !== undefined && produkLama) {
+          catatLogStokClient(store.id, id, produkLama.name, produkLama.stock, payload.stock);
+        }
+      });
     }));
 
     // Refresh data dari server biar state-nya konsisten sama DB
