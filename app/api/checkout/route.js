@@ -40,6 +40,7 @@ export async function POST(request) {
       fullAddress,
       selectedCourier, // { name, service } — cost-nya diabaikan, dihitung ulang
       discountCode,
+      refSource, // opsional, dari ?ref= di link toko
       items, // [{ productId, variantName, quantity }]
     } = body;
 
@@ -124,6 +125,9 @@ export async function POST(request) {
       discountCodeFinal = hasil.code;
     }
 
+    // Sanitasi ref_source: input dari client, jadi jangan dipercaya mentah-mentah.
+    const refSourceFinal = String(refSource || "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 30) || null;
+
     const grandTotal = Math.max(subtotal + shippingCost - discountAmount, 0);
 
     // 4. Kurangi stok ATOMIC per item. Kalau ada yang gagal di tengah jalan
@@ -163,6 +167,7 @@ export async function POST(request) {
         shipping_cost: isFirst ? shippingCost : 0,
         courier: shippingLabel,
         midtrans_order_id: midtransOrderId,
+        ref_source: refSourceFinal,
         discount_code: isFirst ? discountCodeFinal : null,
         discount_amount: isFirst ? discountAmount : 0,
       };
@@ -210,6 +215,14 @@ export async function POST(request) {
       // direservasi tadi (lihat kembalikanStok di webhook handler).
       expiry: { unit: "hour", duration: 2 },
     });
+
+    // Simpan link bayar Midtrans (best-effort) biar WA cart recovery bisa
+    // ngarahin buyer langsung ke halaman pembayaran. Gagal simpan != gagal checkout.
+    try {
+      await supabaseAdmin.from("orders").update({ payment_url: transaction.redirect_url }).eq("midtrans_order_id", midtransOrderId);
+    } catch (e) {
+      console.error("Gagal simpan payment_url:", e.message);
+    }
 
     return Response.json({
       success: true,

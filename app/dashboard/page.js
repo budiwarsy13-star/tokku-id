@@ -8,6 +8,7 @@ import InsightPopup from "@/components/InsightPopup";
 import YangPerluDilakukan from "@/components/YangPerluDilakukan";
 import { Package, ShoppingBag, Wallet, TrendingUp } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
+import UtmBreakdown from "@/components/UtmBreakdown";
 
 function persenPerubahan(sekarang, kemarin) {
   if (kemarin === 0) return sekarang > 0 ? 100 : 0;
@@ -293,6 +294,9 @@ function DashboardShell({ store }) {
               </div>
             )}
           </div>
+
+          {/* SUMBER PESANAN (UTM) */}
+          <UtmBreakdown store={store} />
 
           {/* TREN PENDAPATAN */}
           <div className="bg-white rounded-xl border border-[#E5E2D9] p-6 mb-6">

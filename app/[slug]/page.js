@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent } from "@/lib/tracking";
+import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent, inisialisasiRef, getRefAktif } from "@/lib/tracking";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import { getCart, addToCart, updateCartQty, removeFromCart, clearCart, cartTotalItems, cartSubtotal, cartTotalWeight } from "@/lib/cart";
 import PromoCarousel from "@/components/PromoCarousel";
 import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2 } from "lucide-react";
@@ -40,6 +41,7 @@ export default function TokoPublik() {
       setBanners(bannersData || []);
       setLoading(false);
       initTracking(storeData);
+      inisialisasiRef(slug);
       catatEvent(supabase, storeData.id, "view_toko");
     }
     fetchStore();
@@ -112,7 +114,10 @@ export default function TokoPublik() {
             )}
           </div>
           <div className="pb-1">
-            <h1 className="text-xl md:text-2xl font-black text-[#1C1C1A] leading-tight">{store.name}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl md:text-2xl font-black text-[#1C1C1A] leading-tight">{store.name}</h1>
+              {store.is_verified && <VerifiedBadge />}
+            </div>
             <p className="text-xs text-[#8B8D85]">tokku.id/{store.slug}</p>
           </div>
         </div>
@@ -214,6 +219,7 @@ export default function TokoPublik() {
           items={cart}
           store={store}
           accent={accent}
+          refSource={getRefAktif()}
           onClose={() => setCheckoutOpen(false)}
           onOrderComplete={() => { clearCart(slug); refreshCart(); }}
         />
@@ -386,7 +392,7 @@ function CartDrawer({ cart, accent, onClose, onUpdateQty, onRemove, onCheckout }
   );
 }
 
-function CartCheckoutModal({ items, store, accent, onClose, onOrderComplete }) {
+function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderComplete }) {
   const [buyerName, setBuyerName] = useState("");
   const [buyerPhone, setBuyerPhone] = useState("");
   const [buyerEmail, setBuyerEmail] = useState("");
@@ -501,6 +507,7 @@ function CartCheckoutModal({ items, store, accent, onClose, onOrderComplete }) {
         fullAddress: alamatLengkap,
         selectedCourier: { name: selectedOngkir.name, service: selectedOngkir.service },
         discountCode: diskonTerpakai?.code || null,
+        refSource: refSource || null,
         items: items.map((item) => ({
           productId: item.productId,
           variantName: item.variantName || null,
