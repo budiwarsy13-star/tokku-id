@@ -4,14 +4,18 @@ import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import {
   LayoutDashboard, Package, ShoppingBag, Store,
-  LogOut, Tag, Menu, X, Palette
+  LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles
 } from "lucide-react";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Ringkasan",       href: "/dashboard" },
   { icon: Package,         label: "Produk",          href: "/dashboard/produk" },
+  { icon: Boxes,           label: "Inventori",       href: "/dashboard/inventori" },
   { icon: ShoppingBag,     label: "Pesanan",         href: "/dashboard/pesanan" },
   { icon: Tag,             label: "Diskon",          href: "/dashboard/diskon" },
+  { icon: BarChart3,       label: "Laporan",         href: "/dashboard/laporan" },
+  { icon: Users,           label: "Pelanggan",       href: "/dashboard/pelanggan" },
+  { icon: Sparkles,        label: "Insight AI",      href: "/dashboard/insight" },
   { icon: Palette,         label: "Tampilan",        href: "/dashboard/tampilan" },
   { icon: Store,           label: "Pengaturan toko", href: "/dashboard/toko" },
 ];
