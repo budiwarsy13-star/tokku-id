@@ -39,9 +39,14 @@ export default function PengaturanToko() {
       setStore(storeData);
       setDescription(storeData.description || "");
       setMetaPixelId(storeData.meta_pixel_id || "");
-      setMetaAccessToken(storeData.meta_access_token || "");
       setGa4MeasurementId(storeData.ga4_measurement_id || "");
-      setGa4ApiSecret(storeData.ga4_api_secret || "");
+
+      // Token rahasia disimpan di tabel terpisah (store_secrets) yang cuma bisa
+      // dibaca pemilik toko — BUKAN di tabel stores yang dibaca publik.
+      const { data: secrets } = await supabase
+        .from("store_secrets").select("meta_access_token, ga4_api_secret").eq("store_id", storeData.id).maybeSingle();
+      setMetaAccessToken(secrets?.meta_access_token || "");
+      setGa4ApiSecret(secrets?.ga4_api_secret || "");
 
       const { data: banners } = await supabase
         .from("store_banners").select("*").eq("store_id", storeData.id).order("sort_order", { ascending: true });
@@ -149,14 +154,20 @@ export default function PengaturanToko() {
 
   async function saveTracking() {
     setSavingTracking(true);
-    const { error } = await supabase.from("stores")
+    const { error: storeErr } = await supabase.from("stores")
       .update({
         meta_pixel_id: metaPixelId || null,
-        meta_access_token: metaAccessToken || null,
         ga4_measurement_id: ga4MeasurementId || null,
-        ga4_api_secret: ga4ApiSecret || null,
       })
       .eq("id", store.id);
+    const { error: secretErr } = await supabase.from("store_secrets")
+      .upsert({
+        store_id: store.id,
+        meta_access_token: metaAccessToken || null,
+        ga4_api_secret: ga4ApiSecret || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "store_id" });
+    const error = storeErr || secretErr;
     setSavingTracking(false);
     if (!error) {
       setStore((prev) => ({ ...prev, meta_pixel_id: metaPixelId, ga4_measurement_id: ga4MeasurementId }));

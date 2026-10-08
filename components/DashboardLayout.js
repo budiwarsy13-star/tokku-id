@@ -2,6 +2,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
+import VerifiedBadge from "@/components/VerifiedBadge";
 import {
   LayoutDashboard, Package, ShoppingBag, Store,
   LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles
@@ -110,7 +111,10 @@ export default function DashboardLayout({ store, activeMenu, children, headerTit
             ) : (
               <div className="min-w-0">
                 <p className="text-xs text-[#8B8D85]">Toko kamu</p>
-                <h1 className="font-bold text-[#1C1C1A] truncate">{store?.name}</h1>
+                <div className="flex items-center gap-2 min-w-0">
+                  <h1 className="font-bold text-[#1C1C1A] truncate">{store?.name}</h1>
+                  {store?.is_verified && <VerifiedBadge size="sm" className="flex-shrink-0" />}
+                </div>
               </div>
             )}
           </div>

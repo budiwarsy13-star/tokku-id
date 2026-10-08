@@ -3,6 +3,7 @@ import midtransClient from "midtrans-client";
 import { validasiDiskon } from "@/lib/discount-server";
 import { ambilOpsiOngkir } from "@/lib/rajaongkir-server";
 import { kurangiStokAtomic, kembalikanStok } from "@/lib/stock-server";
+import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
 
 // ======================================================================
 // SATU-SATUNYA JALAN buat bikin order + transaksi pembayaran.
@@ -29,6 +30,16 @@ export async function POST(request) {
   let orderIdYangUdahDiinsert = null; // buat cleanup kalau step Midtrans gagal setelah insert
 
   try {
+    // Rate limit per IP: cegah bot nge-spam checkout buat nahan stok (stok
+    // direservasi 2 jam per checkout) & ngabisin kuota RajaOngkir.
+    const { allowed } = await cekRateLimit(supabaseAdmin, `checkout:${ambilIp(request)}`, 10);
+    if (!allowed) {
+      return Response.json(
+        { success: false, message: "Terlalu banyak percobaan checkout. Tunggu sebentar lalu coba lagi." },
+        { status: 429 }
+      );
+    }
+
     const body = await request.json();
     const {
       storeId,

@@ -185,14 +185,20 @@ export async function POST(request) {
         });
 
         // Ambil kredensial tracking toko ini, terus kirim event Purchase server-side
-        const { data: storeCreds } = await supabaseAdmin
+        const { data: storeIds } = await supabaseAdmin
           .from("stores")
-          .select("meta_pixel_id, meta_access_token, ga4_measurement_id, ga4_api_secret")
+          .select("meta_pixel_id, ga4_measurement_id")
           .eq("id", first.store_id)
           .maybeSingle();
+        // Token rahasia ada di tabel terpisah (store_secrets), service role bypass RLS.
+        const { data: storeSecrets } = await supabaseAdmin
+          .from("store_secrets")
+          .select("meta_access_token, ga4_api_secret")
+          .eq("store_id", first.store_id)
+          .maybeSingle();
 
-        if (storeCreds) {
-          await kirimPurchaseServerSide(storeCreds, updatedOrders, totalGabungan);
+        if (storeIds) {
+          await kirimPurchaseServerSide({ ...storeIds, ...(storeSecrets || {}) }, updatedOrders, totalGabungan);
         }
       }
 

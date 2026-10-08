@@ -249,9 +249,6 @@ function DashboardShell({ store }) {
         <PushOptIn />
         <OnboardingGuide store={store} />
 
-          <PushOptIn />
-          <OnboardingGuide store={store} />
-
           {/* STAT CARDS */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
             <div className="bg-white rounded-xl border border-[#E5E2D9] p-5">
