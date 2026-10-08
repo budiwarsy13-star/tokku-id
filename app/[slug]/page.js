@@ -7,7 +7,12 @@ import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, c
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { getCart, addToCart, updateCartQty, removeFromCart, clearCart, cartTotalItems, cartSubtotal, cartTotalWeight } from "@/lib/cart";
 import PromoCarousel from "@/components/PromoCarousel";
+import { mergeTheme, HEADER_HEIGHTS, GRID_COLS } from "@/lib/theme";
 import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2 } from "lucide-react";
+
+const TITLE_SIZE_BANNER  = { sm: 20, md: 26, lg: 34, xl: 44 };
+const TITLE_SIZE_INLINE  = { sm: 18, md: 22, lg: 28, xl: 36 };
+const TITLE_WEIGHT       = { normal: 400, bold: 700, black: 900 };
 
 export default function TokoPublik() {
   const { slug } = useParams();
@@ -72,8 +77,27 @@ export default function TokoPublik() {
     </main>
   );
 
-  const accent = store.accent_color || "#D85A30";
+  const theme = mergeTheme(store.theme_config || {});
+  const accent = theme.colors.accent || store.accent_color || "#D85A30";
   const accentDark = accent + "CC";
+  const bg = theme.colors.background;
+  const surface = theme.colors.surface;
+  const textColor = theme.colors.text;
+  const fontFamily = theme.typography.fontFamily;
+  const fontImport = `https://fonts.googleapis.com/css2?family=${encodeURIComponent(fontFamily)}:wght@400;600;700;900&display=swap`;
+  const titleWeight = TITLE_WEIGHT[theme.typography.titleWeight] ?? 700;
+  // "layout" bisa override header: Minimal = bar kecil polos langsung ke produk
+  // (gak peduli header.style/deskripsi/promo), Bold = selalu banner gede +
+  // judul dinaikin 1 tingkat, apapun header.style yang dipilih.
+  const isMinimal = theme.layout === "minimal";
+  const isBold = theme.layout === "bold";
+  const SIZE_UP = { sm: "md", md: "lg", lg: "xl", xl: "xl" };
+  const effectiveTitleSize = isBold ? (SIZE_UP[theme.typography.titleSize] || "xl") : theme.typography.titleSize;
+  const showBannerHeader = !isMinimal && (isBold || (theme.header.style === "banner" && theme.sections.showBanner));
+  const cardBorderClass =
+    theme.product.cardStyle === "shadow" ? "shadow-md hover:shadow-lg" :
+    theme.product.cardStyle === "bordered" ? "border-2" : "border";
+  const imageAspectClass = theme.product.imageRatio === "portrait" ? "aspect-[3/4]" : "aspect-square";
 
   function handleBannerClick(banner) {
     if (!banner.link_product_id) return;
@@ -85,67 +109,106 @@ export default function TokoPublik() {
   }
 
   return (
-    <main className="min-h-screen bg-[#FAFAF7]">
+    <main className="min-h-screen" style={{ background: bg, fontFamily, color: textColor }}>
+      <link rel="stylesheet" href={fontImport} />
 
-      {/* BANNER */}
-      {store.banner_url ? (
-        <div className="w-full h-48 md:h-64 overflow-hidden relative">
-          <img src={store.banner_url} alt="Banner" className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/40" />
+      {/* HEADER */}
+      {isMinimal ? (
+        <div className="flex items-center gap-2 px-6 py-3" style={{ background: surface }}>
+          {store.logo_url && (
+            <img src={store.logo_url} alt="Logo" className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
+          )}
+          <div className="flex items-center gap-2">
+            <h1 className="leading-tight" style={{ fontSize: theme.typography.titleSize === "sm" ? 15 : theme.typography.titleSize === "xl" ? 20 : 17, fontWeight: titleWeight, color: textColor }}>
+              {store.name}
+            </h1>
+            {store.is_verified && <VerifiedBadge />}
+          </div>
+        </div>
+      ) : showBannerHeader ? (
+        <div className={`relative w-full overflow-hidden ${HEADER_HEIGHTS[theme.header.height] || HEADER_HEIGHTS.md}`}>
+          {store.banner_url ? (
+            <img src={store.banner_url} alt="Banner" className="w-full h-full object-cover" />
+          ) : (
+            <div className="w-full h-full" style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}66)` }} />
+          )}
+          {(theme.header.overlay || isBold) && <div className="absolute inset-0 bg-black/40" />}
+          <div className={`absolute inset-0 flex items-end p-6 md:p-8 ${
+            theme.header.textPosition === "center" ? "justify-center" :
+            theme.header.textPosition === "right"  ? "justify-end"  : "justify-start"
+          }`}>
+            <div className={`flex items-center gap-3 ${
+              theme.header.textPosition === "center" ? "flex-col text-center" :
+              theme.header.textPosition === "right"  ? "flex-row-reverse text-right" : "text-left"
+            }`}>
+              {store.logo_url && (
+                <img src={store.logo_url} alt="Logo"
+                  className="w-14 h-14 md:w-16 md:h-16 rounded-2xl border-2 border-white object-cover shadow-md flex-shrink-0" />
+              )}
+              <div>
+                <div className={`flex items-center gap-2 flex-wrap ${theme.header.textPosition === "center" ? "justify-center" : ""}`}>
+                  <h1 className="text-white leading-tight" style={{ fontSize: TITLE_SIZE_BANNER[effectiveTitleSize] || 26, fontWeight: titleWeight }}>
+                    {store.name}
+                  </h1>
+                  {store.is_verified && <VerifiedBadge />}
+                </div>
+                <p className="text-xs text-white/80">tokku.id/{store.slug}</p>
+              </div>
+            </div>
+          </div>
         </div>
       ) : (
-        <div className="w-full h-32 md:h-48" style={{ background: `linear-gradient(135deg, ${accent}22, ${accent}44)` }} />
-      )}
-
-      {/* HEADER TOKO */}
-      <div className="max-w-2xl mx-auto px-6">
-        <div className={`flex items-end gap-4 ${store.banner_url ? "-mt-12" : "-mt-8"} mb-4 relative z-10`}>
-          {/* LOGO */}
-          <div
-            className="w-20 h-20 md:w-24 md:h-24 rounded-2xl border-4 border-white overflow-hidden flex-shrink-0 shadow-md flex items-center justify-center"
-            style={{ background: store.logo_url ? "white" : `${accent}22` }}
-          >
+        <div className={`flex items-center gap-4 px-6 py-6 ${theme.header.style === "centered" ? "flex-col text-center justify-center" : ""}`}
+          style={{ background: surface }}>
+          <div className="w-16 h-16 md:w-20 md:h-20 rounded-2xl overflow-hidden flex-shrink-0 shadow-sm flex items-center justify-center"
+            style={{ background: store.logo_url ? surface : `${accent}22` }}>
             {store.logo_url ? (
               <img src={store.logo_url} alt="Logo" className="w-full h-full object-cover" />
             ) : (
-              <span className="text-3xl font-black" style={{ color: accent }}>
+              <span className="text-2xl font-black" style={{ color: accent }}>
                 {store.name?.charAt(0).toUpperCase()}
               </span>
             )}
           </div>
-          <div className="pb-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-xl md:text-2xl font-black text-[#1C1C1A] leading-tight">{store.name}</h1>
+          <div>
+            <div className={`flex items-center gap-2 flex-wrap ${theme.header.style === "centered" ? "justify-center" : ""}`}>
+              <h1 className="leading-tight" style={{ fontSize: TITLE_SIZE_INLINE[theme.typography.titleSize] || 22, fontWeight: titleWeight, color: textColor }}>
+                {store.name}
+              </h1>
               {store.is_verified && <VerifiedBadge />}
             </div>
-            <p className="text-xs text-[#8B8D85]">tokku.id/{store.slug}</p>
+            <p className="text-xs" style={{ color: `${textColor}99` }}>tokku.id/{store.slug}</p>
           </div>
         </div>
+      )}
 
-        {store.description && (
-          <p className="text-sm text-[#5B6472] mb-6 leading-relaxed">{store.description}</p>
+      {/* BODY */}
+      <div className="max-w-2xl mx-auto px-6 pt-6">
+        {!isMinimal && theme.sections.showDescription && store.description && (
+          <p className="text-sm mb-6 leading-relaxed" style={{ color: `${textColor}CC` }}>{store.description}</p>
         )}
 
-        {banners.length > 0 && (
+        {!isMinimal && theme.sections.showPromoCarousel && banners.length > 0 && (
           <PromoCarousel banners={banners} onBannerClick={handleBannerClick} accent={accent} />
         )}
 
         {/* DIVIDER */}
         <div className="flex items-center gap-3 mb-6">
-          <div className="flex-1 h-px bg-[#E5E2D9]" />
-          <span className="text-xs text-[#8B8D85] font-medium uppercase tracking-wider">Produk</span>
-          <div className="flex-1 h-px bg-[#E5E2D9]" />
+          <div className="flex-1 h-px" style={{ background: `${textColor}20` }} />
+          <span className="text-xs font-medium uppercase tracking-wider" style={{ color: `${textColor}80` }}>Produk</span>
+          <div className="flex-1 h-px" style={{ background: `${textColor}20` }} />
         </div>
 
         {/* PRODUK GRID */}
         {products.length === 0 ? (
-          <p className="text-center text-sm text-[#8B8D85] py-12">Belum ada produk di toko ini.</p>
+          <p className="text-center text-sm py-12" style={{ color: `${textColor}80` }}>Belum ada produk di toko ini.</p>
         ) : (
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-12">
+          <div className={`grid gap-4 mb-12 ${GRID_COLS[theme.product.grid] || GRID_COLS["2"]}`}>
             {products.map((p) => (
               <button key={p.id} onClick={() => { setSelectedProduct(p); trackViewContent(store, p); catatEvent(supabase, store.id, "klik_produk", p.id); }}
-                className="bg-white rounded-2xl border border-[#E5E2D9] overflow-hidden text-left hover:shadow-lg hover:-translate-y-0.5 transition-all duration-200 group">
-                <div className="aspect-square overflow-hidden" style={{ background: `${accent}11` }}>
+                className={`rounded-2xl overflow-hidden text-left hover:-translate-y-0.5 transition-all duration-200 group ${cardBorderClass}`}
+                style={{ background: surface, borderColor: theme.product.cardStyle === "bordered" ? accent : `${textColor}15` }}>
+                <div className={`${imageAspectClass} overflow-hidden`} style={{ background: `${accent}11` }}>
                   {p.images?.[0] ? (
                     <img src={p.images[0]} alt={p.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300" />
@@ -156,10 +219,12 @@ export default function TokoPublik() {
                   )}
                 </div>
                 <div className="p-3">
-                  <p className="text-sm font-semibold text-[#1C1C1A] line-clamp-2 mb-1">{p.name}</p>
-                  <p className="text-sm font-black" style={{ color: accent }}>
-                    Rp{Number(p.price).toLocaleString("id-ID")}
-                  </p>
+                  <p className="text-sm font-semibold line-clamp-2 mb-1" style={{ color: textColor }}>{p.name}</p>
+                  {theme.product.showPrice && (
+                    <p className="text-sm font-black" style={{ color: accent }}>
+                      Rp{Number(p.price).toLocaleString("id-ID")}
+                    </p>
+                  )}
                 </div>
               </button>
             ))}

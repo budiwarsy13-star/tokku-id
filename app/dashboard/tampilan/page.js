@@ -62,7 +62,12 @@ export default function TampilanToko() {
   async function handleSave() {
     if (!store) return;
     setSaving(true);
-    await supabase.from("stores").update({ theme_config: theme }).eq("id", store.id);
+    // accent_color ikut disamain ke theme.colors.accent — ini satu-satunya sumber
+    // warna aksen sekarang. Kolom accent_color masih dipakai halaman portal/lacak
+    // pesanan (yang gak punya sistem tema sendiri), jadi disinkronin di sini biar
+    // gak ada 2 warna beda yang harus di-maintain terpisah.
+    await supabase.from("stores").update({ theme_config: theme, accent_color: theme.colors.accent }).eq("id", store.id);
+    setStore((prev) => ({ ...prev, theme_config: theme, accent_color: theme.colors.accent }));
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2500);
@@ -208,6 +213,18 @@ export default function TampilanToko() {
                     onChange={e => set("header.overlay", e.target.checked)}
                     className="w-4 h-4 accent-[#D85A30]" />
                 </label>
+
+                <label className="flex items-center justify-between">
+                  <span className="text-sm text-[#1C1C1A]">Tampilkan foto banner di header</span>
+                  <input type="checkbox" checked={theme.sections.showBanner}
+                    onChange={e => set("sections.showBanner", e.target.checked)}
+                    className="w-4 h-4 accent-[#D85A30]" />
+                </label>
+                {theme.header.style !== "banner" && (
+                  <p className="text-xs text-[#8B8D85] -mt-3">
+                    Cuma kepakai kalau gaya header di atas di-set ke "Banner Penuh".
+                  </p>
+                )}
               </>
             )}
 
@@ -420,13 +437,31 @@ export default function TampilanToko() {
                 minHeight: 400,
                 color: theme.colors.text,
               }}>
-                {/* Header preview */}
-                {theme.header.style === "banner" && store.banner_url ? (
+                {/* Header preview — "layout" bisa override gaya header: Minimal = bar kecil
+                    polos tanpa deskripsi/promo, Bold = selalu banner gede + judul dinaikin 1 tingkat */}
+                {theme.layout === "minimal" ? (
+                  <div className="flex items-center gap-2 px-4 py-3">
+                    {store.logo_url && (
+                      <img src={store.logo_url} className="w-7 h-7 rounded-lg object-cover" alt="" />
+                    )}
+                    <h1 style={{
+                      fontSize: theme.typography.titleSize === "sm" ? 13 : theme.typography.titleSize === "xl" ? 18 : 15,
+                      fontWeight: theme.typography.titleWeight === "normal" ? 400 : theme.typography.titleWeight === "black" ? 900 : 700,
+                      color: theme.colors.text,
+                    }}>
+                      {store.name}
+                    </h1>
+                  </div>
+                ) : theme.layout === "bold" || (theme.header.style === "banner" && theme.sections.showBanner) ? (
                   <div className={`relative w-full overflow-hidden ${
                     theme.header.height === "sm" ? "h-24" : theme.header.height === "lg" ? "h-48" : "h-36"
                   }`}>
-                    <img src={store.banner_url} alt="" className="w-full h-full object-cover" />
-                    {theme.header.overlay && (
+                    {store.banner_url ? (
+                      <img src={store.banner_url} alt="" className="w-full h-full object-cover" />
+                    ) : (
+                      <div className="w-full h-full" style={{ background: `linear-gradient(135deg, ${theme.colors.accent}44, ${theme.colors.accent}77)` }} />
+                    )}
+                    {(theme.header.overlay || theme.layout === "bold") && (
                       <div className="absolute inset-0 bg-black/40" />
                     )}
                     <div className={`absolute inset-0 flex items-end p-4 ${
@@ -434,7 +469,9 @@ export default function TampilanToko() {
                       theme.header.textPosition === "right"  ? "justify-end  text-right"  : "justify-start text-left"
                     }`}>
                       <h1 className="text-white" style={{
-                        fontSize: theme.typography.titleSize === "sm" ? 16 : theme.typography.titleSize === "md" ? 20 : theme.typography.titleSize === "xl" ? 30 : 24,
+                        fontSize: theme.layout === "bold"
+                          ? (theme.typography.titleSize === "sm" ? 20 : theme.typography.titleSize === "md" ? 24 : 30)
+                          : (theme.typography.titleSize === "sm" ? 16 : theme.typography.titleSize === "md" ? 20 : theme.typography.titleSize === "xl" ? 30 : 24),
                         fontWeight: theme.typography.titleWeight === "normal" ? 400 : theme.typography.titleWeight === "black" ? 900 : 700,
                       }}>
                         {store.name}
@@ -458,8 +495,8 @@ export default function TampilanToko() {
                   </div>
                 )}
 
-                {/* Description preview */}
-                {theme.sections.showDescription && store.description && (
+                {/* Description preview — layout "Minimal" selalu loncat langsung ke produk */}
+                {theme.layout !== "minimal" && theme.sections.showDescription && store.description && (
                   <p className="px-4 py-2 text-xs" style={{ color: `${theme.colors.text}99` }}>
                     {store.description}
                   </p>

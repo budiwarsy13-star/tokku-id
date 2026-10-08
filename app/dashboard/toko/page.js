@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Eye, Search, Upload } from "lucide-react";
+import { Eye, Search, Upload, Palette } from "lucide-react";
 
 
 export default function PengaturanToko() {
@@ -18,7 +18,6 @@ export default function PengaturanToko() {
 
   // Appearance state
   const [description, setDescription] = useState("");
-  const [accentColor, setAccentColor] = useState("#D85A30");
   const [bannerUploading, setBannerUploading] = useState(false);
   const [logoUploading, setLogoUploading] = useState(false);
   const bannerRef = useRef();
@@ -39,7 +38,6 @@ export default function PengaturanToko() {
       if (!storeData) { window.location.href = "/dashboard"; return; }
       setStore(storeData);
       setDescription(storeData.description || "");
-      setAccentColor(storeData.accent_color || "#D85A30");
       setMetaPixelId(storeData.meta_pixel_id || "");
       setMetaAccessToken(storeData.meta_access_token || "");
       setGa4MeasurementId(storeData.ga4_measurement_id || "");
@@ -171,19 +169,14 @@ export default function PengaturanToko() {
   async function saveAppearance() {
     setSaving(true);
     const { error } = await supabase.from("stores")
-      .update({ description, accent_color: accentColor })
+      .update({ description })
       .eq("id", store.id);
     setSaving(false);
     if (!error) {
-      setStore((prev) => ({ ...prev, description, accent_color: accentColor }));
+      setStore((prev) => ({ ...prev, description }));
       showMsg("Tampilan toko berhasil disimpan!");
     }
   }
-
-
-  const ACCENT_PRESETS = [
-    "#D85A30", "#1C1C1A", "#3B6D11", "#2C5F8A", "#7B3FA0", "#B8860B", "#A32D2D",
-  ];
 
   if (loading) return (
     <main className="min-h-screen bg-[#FAFAF7] flex items-center justify-center">
@@ -377,36 +370,22 @@ export default function PengaturanToko() {
               <p className="text-xs text-[#8B8D85] mt-1 text-right">{description.length}/150</p>
             </div>
 
-            {/* WARNA AKSEN */}
+            {/* WARNA AKSEN — sekarang diatur dari Tampilan, biar gak ada 2 pengaturan warna yang beda sendiri-sendiri */}
             <div className="bg-white rounded-xl border border-[#E5E2D9] p-6">
               <h2 className="font-bold text-[#1C1C1A] mb-1">Warna aksen toko</h2>
-              <p className="text-sm text-[#8B8D85] mb-4">Warna tombol dan highlight di halaman toko kamu.</p>
-              <div className="flex items-center gap-3 flex-wrap mb-4">
-                {ACCENT_PRESETS.map((c) => (
-                  <button key={c} onClick={() => setAccentColor(c)}
-                    className="w-8 h-8 rounded-full transition-transform hover:scale-110"
-                    style={{
-                      background: c,
-                      outline: accentColor === c ? `3px solid ${c}` : "none",
-                      outlineOffset: "2px",
-                    }}
-                  />
-                ))}
-                <input type="color" value={accentColor} onChange={(e) => setAccentColor(e.target.value)}
-                  className="w-8 h-8 rounded-full cursor-pointer border border-[#E5E2D9]"
-                  title="Pilih warna custom"
-                />
-              </div>
+              <p className="text-sm text-[#8B8D85] mb-4">
+                Warna tombol & highlight sekarang diatur dari menu <strong>Tampilan</strong>, bareng sama
+                pengaturan desain toko lainnya (font, layout, header). Perubahan di sana otomatis
+                kepakai juga di halaman lacak pesanan pembeli.
+              </p>
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-lg" style={{ background: accentColor }} />
-                <span className="text-sm font-mono text-[#5B6472]">{accentColor}</span>
-                <button
-                  className="ml-auto px-4 py-2 text-white text-sm rounded-lg"
-                  style={{ background: accentColor }}
-                  disabled
-                >
-                  Preview tombol
-                </button>
+                <div className="w-10 h-10 rounded-lg flex-shrink-0" style={{ background: store.accent_color || "#D85A30" }} />
+                <span className="text-sm font-mono text-[#5B6472]">{store.accent_color || "#D85A30"}</span>
+                <a href="/dashboard/tampilan"
+                  className="ml-auto flex items-center gap-2 px-4 py-2 text-white text-sm rounded-lg hover:opacity-90 transition-opacity"
+                  style={{ background: store.accent_color || "#D85A30" }}>
+                  <Palette size={14} /> Atur di Tampilan
+                </a>
               </div>
             </div>
 
