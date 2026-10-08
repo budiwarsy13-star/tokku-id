@@ -13,7 +13,7 @@ const menuItems = [
   { icon: Package,         label: "Produk",          href: "/dashboard/produk" },
   { icon: Boxes,           label: "Inventori",       href: "/dashboard/inventori" },
   { icon: ShoppingBag,     label: "Pesanan",         href: "/dashboard/pesanan" },
-  { icon: Tag,             label: "Diskon",          href: "/dashboard/diskon" },
+  { icon: Tag,             label: "Pusat Promo",     href: "/dashboard/promo" },
   { icon: BarChart3,       label: "Laporan",         href: "/dashboard/laporan" },
   { icon: Users,           label: "Pelanggan",       href: "/dashboard/pelanggan" },
   { icon: Sparkles,        label: "Insight AI",      href: "/dashboard/insight" },
