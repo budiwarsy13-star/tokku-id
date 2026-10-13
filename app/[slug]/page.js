@@ -7,6 +7,7 @@ import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, c
 import VerifiedBadge from "@/components/VerifiedBadge";
 import { getCart, addToCart, updateCartQty, removeFromCart, clearCart, cartTotalItems, cartSubtotal, cartTotalWeight } from "@/lib/cart";
 import PromoCarousel from "@/components/PromoCarousel";
+import { hargaPromo, promoAktif } from "@/lib/promo";
 import { mergeTheme, HEADER_HEIGHTS, GRID_COLS } from "@/lib/theme";
 import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2, ShieldCheck, Zap, Sparkles } from "lucide-react";
 
@@ -14,6 +15,23 @@ const TITLE_SIZE_BANNER  = { sm: 20, md: 26, lg: 34, xl: 44 };
 const TITLE_SIZE_INLINE  = { sm: 18, md: 22, lg: 28, xl: 36 };
 const TITLE_WEIGHT       = { normal: 400, bold: 700, black: 900 };
 const DUA_MINGGU_MS      = 14 * 24 * 60 * 60 * 1000;
+
+// theme.colors.text itu dipilih seller biar kontras sama BACKGROUND HALAMAN,
+// bukan sama warna "surface" (kartu/nav bar). Dua warna itu diatur terpisah
+// di menu Tampilan, jadi bisa ketabrak — teks putih di atas kartu putih,
+// misalnya. Fungsi ini hitung warna teks yang aman (hitam/putih) berdasarkan
+// kecerahan background ASLI yang dia tempelin, bukan ikut textColor global.
+function warnaTeksAman(hexBg) {
+  if (!hexBg || hexBg[0] !== "#") return "#1C1C1A";
+  let h = hexBg.slice(1);
+  if (h.length === 3) h = h.split("").map((c) => c + c).join("");
+  if (h.length !== 6) return "#1C1C1A";
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  const kecerahan = (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
+  return kecerahan > 0.55 ? "#1C1C1A" : "#FFFFFF";
+}
 
 export default function TokoPublik() {
   const { slug } = useParams();
@@ -99,6 +117,7 @@ export default function TokoPublik() {
     theme.product.cardStyle === "shadow" ? "shadow-md hover:shadow-lg" :
     theme.product.cardStyle === "bordered" ? "border-2" : "border";
   const imageAspectClass = theme.product.imageRatio === "portrait" ? "aspect-[3/4]" : "aspect-square";
+  const onSurfaceText = warnaTeksAman(surface); // teks yang nempel di atas warna "surface" (nav bar, kartu produk, header non-banner)
 
   function handleBannerClick(banner) {
     if (!banner.link_product_id) return;
@@ -124,15 +143,15 @@ export default function TokoPublik() {
                 {store.name?.charAt(0).toUpperCase()}
               </span>
             )}
-            <span className="text-sm font-bold truncate" style={{ color: textColor }}>{store.name}</span>
+            <span className="text-sm font-bold truncate" style={{ color: onSurfaceText }}>{store.name}</span>
             {store.is_verified && <VerifiedBadge />}
           </div>
           <div className="flex items-center gap-4 flex-shrink-0">
-            <a href="/portal" className="text-xs font-medium hidden sm:block hover:underline" style={{ color: `${textColor}99` }}>
+            <a href="/portal" className="text-xs font-medium hidden sm:block hover:underline" style={{ color: `${onSurfaceText}99` }}>
               Lacak pesanan
             </a>
             <button onClick={() => setCartOpen(true)} className="relative flex items-center" aria-label="Keranjang">
-              <ShoppingCart size={18} style={{ color: textColor }} />
+              <ShoppingCart size={18} style={{ color: onSurfaceText }} />
               {cart.length > 0 && (
                 <span className="absolute -top-2 -right-2 w-4 h-4 rounded-full text-[10px] font-bold flex items-center justify-center text-white" style={{ background: accent }}>
                   {cartTotalItems(cart)}
@@ -150,44 +169,44 @@ export default function TokoPublik() {
             <img src={store.logo_url} alt="Logo" className="w-8 h-8 rounded-lg object-cover flex-shrink-0" />
           )}
           <div className="flex items-center gap-2">
-            <h1 className="leading-tight" style={{ fontSize: theme.typography.titleSize === "sm" ? 15 : theme.typography.titleSize === "xl" ? 20 : 17, fontWeight: titleWeight, color: textColor }}>
+            <h1 className="leading-tight" style={{ fontSize: theme.typography.titleSize === "sm" ? 15 : theme.typography.titleSize === "xl" ? 20 : 17, fontWeight: titleWeight, color: onSurfaceText }}>
               {store.name}
             </h1>
             {store.is_verified && <VerifiedBadge />}
           </div>
         </div>
       ) : showBannerHeader ? (
-        <div className={`relative w-full overflow-hidden ${HEADER_HEIGHTS[theme.header.height] || HEADER_HEIGHTS.md}`}>
-          {store.banner_url ? (
-            <img src={store.banner_url} alt="Banner" className="w-full h-full object-cover" />
-          ) : (
-            <div className="w-full h-full" style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}66)` }} />
-          )}
-          {(theme.header.overlay || isBold) && <div className="absolute inset-0 bg-black/40" />}
-          <div className={`absolute inset-0 flex items-end p-6 md:p-8 ${
+        <>
+          {/* Foto banner — cuma gambar, gak ada teks numpuk di atasnya lagi */}
+          <div className={`relative w-full overflow-hidden ${HEADER_HEIGHTS[theme.header.height] || HEADER_HEIGHTS.md}`}>
+            {store.banner_url ? (
+              <img src={store.banner_url} alt="Banner" className="w-full h-full object-cover" />
+            ) : (
+              <div className="w-full h-full" style={{ background: `linear-gradient(135deg, ${accent}33, ${accent}66)` }} />
+            )}
+            {(theme.header.overlay || isBold) && <div className="absolute inset-0 bg-black/20" />}
+          </div>
+          {/* Identitas toko — ditaro DI BAWAH banner (bukan numpuk di atasnya), logo
+              sejajar satu baris sama nama toko, dikasih jarak biar ada "napas" */}
+          <div className={`flex items-center gap-3 px-6 py-6 md:py-8 ${
             theme.header.textPosition === "center" ? "justify-center" :
             theme.header.textPosition === "right"  ? "justify-end"  : "justify-start"
-          }`}>
-            <div className={`flex items-center gap-3 ${
-              theme.header.textPosition === "center" ? "flex-col text-center" :
-              theme.header.textPosition === "right"  ? "flex-row-reverse text-right" : "text-left"
-            }`}>
-              {store.logo_url && (
-                <img src={store.logo_url} alt="Logo"
-                  className="w-14 h-14 md:w-16 md:h-16 rounded-2xl border-2 border-white object-cover shadow-md flex-shrink-0" />
-              )}
-              <div>
-                <div className={`flex items-center gap-2 flex-wrap ${theme.header.textPosition === "center" ? "justify-center" : ""}`}>
-                  <h1 className="text-white leading-tight" style={{ fontSize: TITLE_SIZE_BANNER[effectiveTitleSize] || 26, fontWeight: titleWeight }}>
-                    {store.name}
-                  </h1>
-                  {store.is_verified && <VerifiedBadge />}
-                </div>
-                <p className="text-xs text-white/80">tokku.id/{store.slug}</p>
+          }`} style={{ background: surface }}>
+            {store.logo_url && (
+              <img src={store.logo_url} alt="Logo"
+                className="w-12 h-12 md:w-14 md:h-14 rounded-2xl object-cover shadow-sm flex-shrink-0" />
+            )}
+            <div className={theme.header.textPosition === "center" ? "text-center" : theme.header.textPosition === "right" ? "text-right" : "text-left"}>
+              <div className={`flex items-center gap-2 flex-wrap ${theme.header.textPosition === "center" ? "justify-center" : theme.header.textPosition === "right" ? "justify-end" : ""}`}>
+                <h1 className="leading-tight" style={{ fontSize: TITLE_SIZE_BANNER[effectiveTitleSize] || 26, fontWeight: titleWeight, color: onSurfaceText }}>
+                  {store.name}
+                </h1>
+                {store.is_verified && <VerifiedBadge />}
               </div>
+              <p className="text-xs" style={{ color: `${onSurfaceText}99` }}>tokku.id/{store.slug}</p>
             </div>
           </div>
-        </div>
+        </>
       ) : (
         <div className={`flex items-center gap-4 px-6 py-6 ${theme.header.style === "centered" ? "flex-col text-center justify-center" : ""}`}
           style={{ background: surface }}>
@@ -203,12 +222,12 @@ export default function TokoPublik() {
           </div>
           <div>
             <div className={`flex items-center gap-2 flex-wrap ${theme.header.style === "centered" ? "justify-center" : ""}`}>
-              <h1 className="leading-tight" style={{ fontSize: TITLE_SIZE_INLINE[theme.typography.titleSize] || 22, fontWeight: titleWeight, color: textColor }}>
+              <h1 className="leading-tight" style={{ fontSize: TITLE_SIZE_INLINE[theme.typography.titleSize] || 22, fontWeight: titleWeight, color: onSurfaceText }}>
                 {store.name}
               </h1>
               {store.is_verified && <VerifiedBadge />}
             </div>
-            <p className="text-xs" style={{ color: `${textColor}99` }}>tokku.id/{store.slug}</p>
+            <p className="text-xs" style={{ color: `${onSurfaceText}99` }}>tokku.id/{store.slug}</p>
           </div>
         </div>
       )}
@@ -233,7 +252,7 @@ export default function TokoPublik() {
             ].map(({ Icon, text }) => (
               <div key={text} className="flex items-center gap-2.5 rounded-xl px-4 py-3" style={{ background: surface, border: `1px solid ${textColor}12` }}>
                 <Icon size={16} style={{ color: accent }} className="flex-shrink-0" />
-                <span className="text-xs font-medium" style={{ color: `${textColor}CC` }}>{text}</span>
+                <span className="text-xs font-medium" style={{ color: `${onSurfaceText}CC` }}>{text}</span>
               </div>
             ))}
           </div>
@@ -253,6 +272,7 @@ export default function TokoPublik() {
           <div className={`grid gap-4 md:gap-6 mb-16 ${GRID_COLS[theme.product.grid] || GRID_COLS["2"]}`}>
             {products.map((p) => {
               const isBaru = p.created_at && (Date.now() - new Date(p.created_at).getTime()) < DUA_MINGGU_MS;
+              const lagiPromo = promoAktif(p);
               return (
                 <button key={p.id} onClick={() => { setSelectedProduct(p); trackViewContent(store, p); catatEvent(supabase, store.id, "klik_produk", p.id); }}
                   className={`relative rounded-2xl overflow-hidden text-left transition-all duration-300 group hover:-translate-y-1 hover:shadow-xl ${cardBorderClass}`}
@@ -261,6 +281,12 @@ export default function TokoPublik() {
                     <span className="absolute top-2.5 left-2.5 z-10 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full text-white flex items-center gap-1"
                       style={{ background: accent }}>
                       <Sparkles size={10} /> Baru
+                    </span>
+                  )}
+                  {lagiPromo && (
+                    <span className="absolute top-2.5 right-2.5 z-10 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full text-white"
+                      style={{ background: "#A32D2D" }}>
+                      -{p.promo_percent}%
                     </span>
                   )}
                   <div className={`${imageAspectClass} overflow-hidden`} style={{ background: `${accent}11` }}>
@@ -274,11 +300,22 @@ export default function TokoPublik() {
                     )}
                   </div>
                   <div className="p-3.5">
-                    <p className="text-sm font-semibold line-clamp-2 mb-1" style={{ color: textColor }}>{p.name}</p>
+                    <p className="text-sm font-semibold line-clamp-2 mb-1" style={{ color: onSurfaceText }}>{p.name}</p>
                     {theme.product.showPrice && (
-                      <p className="text-sm font-black" style={{ color: accent }}>
-                        Rp{Number(p.price).toLocaleString("id-ID")}
-                      </p>
+                      lagiPromo ? (
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <p className="text-sm font-black" style={{ color: accent }}>
+                            Rp{hargaPromo(p.price, p).toLocaleString("id-ID")}
+                          </p>
+                          <p className="text-xs line-through" style={{ color: `${onSurfaceText}66` }}>
+                            Rp{Number(p.price).toLocaleString("id-ID")}
+                          </p>
+                        </div>
+                      ) : (
+                        <p className="text-sm font-black" style={{ color: accent }}>
+                          Rp{Number(p.price).toLocaleString("id-ID")}
+                        </p>
+                      )
                     )}
                   </div>
                 </button>
@@ -355,7 +392,8 @@ export default function TokoPublik() {
               <p className="text-xs mt-1 max-w-xs" style={{ color: `${textColor}80` }}>{store.description}</p>
             )}
           </div>
-          <a href="/portal" className="text-xs font-medium hover:underline w-fit" style={{ color: accent }}>
+          {/* Fix warna tetap oranye brand tokku.id (bukan accent toko) — sama kayak link "tokku.id" di bawah */}
+          <a href="/portal" className="text-xs font-medium hover:underline w-fit text-[#D85A30]">
             Lacak pesanan kamu →
           </a>
         </div>
@@ -375,7 +413,9 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants?.length > 0 ? product.variants[0] : null
   );
-  const unitPrice = selectedVariant ? selectedVariant.price : product.price;
+  const unitPriceAsli = selectedVariant ? selectedVariant.price : product.price;
+  const lagiPromo = promoAktif(product);
+  const unitPrice = hargaPromo(unitPriceAsli, product);
   const stok = selectedVariant ? selectedVariant.stock : product.stock;
   const habis = stok !== undefined && stok !== null && stok <= 0;
 
@@ -398,8 +438,13 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
 
           <div>
             <p className="font-bold text-[#1C1C1A] text-lg">{product.name}</p>
-            <p className="text-lg font-black mt-0.5" style={{ color: accent }}>
+            <p className="text-lg font-black mt-0.5 flex items-center gap-2 flex-wrap" style={{ color: accent }}>
               Rp{Number(unitPrice).toLocaleString("id-ID")}
+              {lagiPromo && (
+                <span className="text-sm font-medium line-through" style={{ color: "#8B8D85" }}>
+                  Rp{Number(unitPriceAsli).toLocaleString("id-ID")}
+                </span>
+              )}
             </p>
             {product.description && (
               <p className="text-sm text-[#5B6472] mt-2 leading-relaxed">{product.description}</p>
@@ -414,7 +459,7 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
                 className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none">
                 {product.variants.map((v) => (
                   <option key={v.name} value={v.name} disabled={v.stock <= 0}>
-                    {v.name} — Rp{Number(v.price).toLocaleString("id-ID")} {v.stock <= 0 ? "(Habis)" : ""}
+                    {v.name} — Rp{Number(hargaPromo(v.price, product)).toLocaleString("id-ID")} {v.stock <= 0 ? "(Habis)" : ""}
                   </option>
                 ))}
               </select>

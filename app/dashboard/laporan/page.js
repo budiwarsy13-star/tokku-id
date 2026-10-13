@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import LineChartSVG from "@/components/LineChartSVG";
+import JamEmas from "@/components/JamEmas";
 
 const PERIODE = [
   { key: "7hari", label: "7 hari terakhir", hari: 7 },
@@ -160,6 +161,9 @@ export default function LaporanPage() {
             </div>
           )}
         </div>
+
+        {/* Jam emas (selalu 90 hari terakhir, gak ikut filter periode) */}
+        <JamEmas store={store} />
       </div>
     </DashboardLayout>
   );

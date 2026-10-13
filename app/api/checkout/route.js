@@ -4,6 +4,7 @@ import { validasiDiskon } from "@/lib/discount-server";
 import { ambilOpsiOngkir } from "@/lib/rajaongkir-server";
 import { kurangiStokAtomic, kembalikanStok } from "@/lib/stock-server";
 import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
+import { hargaPromo } from "@/lib/promo";
 
 // ======================================================================
 // SATU-SATUNYA JALAN buat bikin order + transaksi pembayaran.
@@ -93,6 +94,11 @@ export async function POST(request) {
         stokTersedia = product.stock;
         namaLengkap = product.name;
       }
+
+      // Harga promo (kalau lagi aktif) dihitung di sini, pakai jam server --
+      // bukan dari client, biar seller gak bisa dibohongin soal kapan promo
+      // berakhir. Hasil ini juga yang dipakai buat total & dikirim ke Midtrans.
+      unitPrice = hargaPromo(unitPrice, product);
 
       const qty = Math.max(1, parseInt(item.quantity) || 1);
       if (qty > stokTersedia) {

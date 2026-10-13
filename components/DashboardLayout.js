@@ -5,7 +5,7 @@ import NotificationBell from "@/components/NotificationBell";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import {
   LayoutDashboard, Package, ShoppingBag, Store,
-  LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles
+  LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles, Flame, MessageCircle
 } from "lucide-react";
 
 const menuItems = [
@@ -13,9 +13,11 @@ const menuItems = [
   { icon: Package,         label: "Produk",          href: "/dashboard/produk" },
   { icon: Boxes,           label: "Inventori",       href: "/dashboard/inventori" },
   { icon: ShoppingBag,     label: "Pesanan",         href: "/dashboard/pesanan" },
-  { icon: Tag,             label: "Pusat Promo",     href: "/dashboard/promo" },
+  { icon: Tag,             label: "Diskon",          href: "/dashboard/diskon" },
+  { icon: Flame,           label: "Promo",           href: "/dashboard/promo" },
   { icon: BarChart3,       label: "Laporan",         href: "/dashboard/laporan" },
   { icon: Users,           label: "Pelanggan",       href: "/dashboard/pelanggan" },
+  { icon: MessageCircle,   label: "WA Blast",        href: "/dashboard/blast" },
   { icon: Sparkles,        label: "Insight AI",      href: "/dashboard/insight" },
   { icon: Palette,         label: "Tampilan",        href: "/dashboard/tampilan" },
   { icon: Store,           label: "Pengaturan toko", href: "/dashboard/toko" },

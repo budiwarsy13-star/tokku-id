@@ -3,7 +3,8 @@
 import { useState, useEffect, useMemo, Fragment } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Loader2, Check, Search, Plus, Minus, ChevronDown, ChevronUp } from "lucide-react";
+import { Loader2, Check, Search, Plus, Minus, ChevronDown, ChevronUp, Tag } from "lucide-react";
+import { hargaPromo, statusPromo } from "@/lib/promo";
 
 function totalStokProduk(p) {
   return (p.variants || []).length > 0 ? p.variants.reduce((s, v) => s + (v.stock || 0), 0) : (p.stock || 0);
@@ -65,6 +66,26 @@ export default function KelolaHargaPage() {
     setUbahan((prev) => ({ ...prev, [id]: { ...prev[id], [field]: value === "" ? "" : Number(value) } }));
   }
 
+  // promo_ends_at itu string tanggal (bukan angka), jadi handler-nya terpisah
+  // dari ubahField di atas yang maksa Number(value).
+  function ubahPromoAkhir(id, value) {
+    setUbahan((prev) => ({ ...prev, [id]: { ...prev[id], promo_ends_at: value === "" ? "" : value } }));
+  }
+
+  // Matiin promo yang lagi aktif/terjadwal -- beda dari "" (artinya "gak
+  // diubah"), null di sini artinya "beneran dihapus" pas disimpan.
+  function hapusPromo(id) {
+    setUbahan((prev) => ({ ...prev, [id]: { ...prev[id], promo_percent: null, promo_ends_at: null } }));
+  }
+
+  function tanggalKeInputLokal(iso) {
+    if (!iso) return "";
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
   function toggleSemua(cek) {
     setDipilih(cek ? new Set(produkTampil.filter((p) => !(p.variants || []).length).map((p) => p.id)) : new Set());
   }
@@ -104,7 +125,7 @@ export default function KelolaHargaPage() {
   async function simpanSemua() {
     const idBerubah = Object.keys(ubahan).filter((id) => {
       const u = ubahan[id];
-      return ["price", "hpp", "stock", "stok_minimum"].some((f) => u[f] !== undefined && u[f] !== "");
+      return ["price", "hpp", "stock", "stok_minimum", "promo_percent", "promo_ends_at"].some((f) => u[f] !== undefined && u[f] !== "");
     });
     if (idBerubah.length === 0) return;
 
@@ -119,6 +140,12 @@ export default function KelolaHargaPage() {
       if (u.hpp !== undefined && u.hpp !== "") payload.hpp = u.hpp;
       if (u.stock !== undefined && u.stock !== "") payload.stock = u.stock;
       if (u.stok_minimum !== undefined && u.stok_minimum !== "") payload.stok_minimum = u.stok_minimum;
+      // null di sini = promo beneran dihapus (lewat tombol "Hapus promo"),
+      // bukan "gak diubah" (yang nilainya "" dan udah ke-skip di atas).
+      if (u.promo_percent !== undefined && u.promo_percent !== "") payload.promo_percent = u.promo_percent;
+      if (u.promo_ends_at !== undefined && u.promo_ends_at !== "") {
+        payload.promo_ends_at = u.promo_ends_at === null ? null : new Date(u.promo_ends_at).toISOString();
+      }
 
       return supabase.from("products").update(payload).eq("id", id).then(async () => {
         if (payload.stock !== undefined && produkLama && payload.stock !== produkLama.stock) {
@@ -167,7 +194,7 @@ export default function KelolaHargaPage() {
 
   const jumlahBerubah = Object.keys(ubahan).filter((id) => {
     const u = ubahan[id];
-    return ["price", "hpp", "stock", "stok_minimum"].some((f) => u[f] !== undefined && u[f] !== "");
+    return ["price", "hpp", "stock", "stok_minimum", "promo_percent", "promo_ends_at"].some((f) => u[f] !== undefined && u[f] !== "");
   }).length;
 
   if (loading) {
@@ -218,7 +245,7 @@ export default function KelolaHargaPage() {
 
         {/* Tabel */}
         <div className="bg-white rounded-xl border border-[#E5E2D9] overflow-hidden overflow-x-auto">
-          <table className="w-full text-sm min-w-[820px]">
+          <table className="w-full text-sm min-w-[980px]">
             <thead>
               <tr className="border-b border-[#F1EFE8] text-left text-xs text-[#8B8D85]">
                 <th className="p-3 w-8">
@@ -231,6 +258,8 @@ export default function KelolaHargaPage() {
                 <th className="p-3 w-20">Margin</th>
                 <th className="p-3 w-32">Stok</th>
                 <th className="p-3 w-24">Batas Min.</th>
+                <th className="p-3 w-20">Promo %</th>
+                <th className="p-3 w-40">Promo s/d</th>
                 <th className="p-3 w-10"></th>
               </tr>
             </thead>
@@ -244,6 +273,13 @@ export default function KelolaHargaPage() {
                 const stokVal = nilaiField(p, "stock");
                 const stok = punyaVarian ? totalStokProduk(p) : stokVal;
                 const warnaStok = stok === 0 ? "text-[#A32D2D]" : stok <= (p.stok_minimum ?? 3) ? "text-[#B8860B]" : "text-[#1C1C1A]";
+
+                // Preview status promo pakai nilai yang lagi diedit (belum
+                // disimpan) biar seller langsung lihat efeknya sebelum klik Simpan.
+                const promoPersen = nilaiField(p, "promo_percent");
+                const promoAkhirMentah = nilaiField(p, "promo_ends_at");
+                const previewPromo = { promo_percent: promoPersen, promo_ends_at: promoAkhirMentah };
+                const statusP = statusPromo(previewPromo);
 
                 return (
                   <Fragment key={p.id}>
@@ -259,6 +295,16 @@ export default function KelolaHargaPage() {
                           <div className="min-w-0">
                             <p className="text-[#1C1C1A] truncate">{p.name}</p>
                             {p.sku && <p className="text-xs text-[#8B8D85]">{p.sku}</p>}
+                            {statusP === "aktif" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-white bg-[#A32D2D] px-1.5 py-0.5 rounded mt-0.5">
+                                <Tag size={9} /> Promo aktif
+                              </span>
+                            )}
+                            {statusP === "terjadwal" && (
+                              <span className="inline-flex items-center gap-1 text-[10px] font-medium text-[#B8860B] bg-[#FDF3DA] px-1.5 py-0.5 rounded mt-0.5">
+                                <Tag size={9} /> Promo terjadwal
+                              </span>
+                            )}
                           </div>
                         </div>
                       </td>
@@ -268,8 +314,13 @@ export default function KelolaHargaPage() {
                             {(p.variants || []).length} varian
                           </a>
                         ) : (
-                          <input type="number" value={harga} onChange={(e) => ubahField(p.id, "price", e.target.value)}
-                            className="w-24 px-2 py-1.5 border border-[#E5E2D9] rounded-lg" />
+                          <>
+                            <input type="number" value={harga} onChange={(e) => ubahField(p.id, "price", e.target.value)}
+                              className="w-24 px-2 py-1.5 border border-[#E5E2D9] rounded-lg" />
+                            {statusP === "aktif" && (
+                              <p className="text-[10px] text-[#3B6D11] mt-1">→ Rp{hargaPromo(harga, previewPromo).toLocaleString("id-ID")}</p>
+                            )}
+                          </>
                         )}
                       </td>
                       <td className="p-3 align-top">
@@ -300,6 +351,21 @@ export default function KelolaHargaPage() {
                           className="w-16 px-2 py-1.5 border border-[#E5E2D9] rounded-lg" />
                       </td>
                       <td className="p-3 align-top">
+                        <input type="number" min="1" max="95" value={promoPersen ?? ""}
+                          onChange={(e) => ubahField(p.id, "promo_percent", e.target.value)}
+                          placeholder="-" className="w-16 px-2 py-1.5 border border-[#E5E2D9] rounded-lg" />
+                      </td>
+                      <td className="p-3 align-top">
+                        <input type="datetime-local" value={tanggalKeInputLokal(promoAkhirMentah)}
+                          onChange={(e) => ubahPromoAkhir(p.id, e.target.value)}
+                          className="w-full px-2 py-1.5 border border-[#E5E2D9] rounded-lg text-xs" />
+                        {(statusP === "aktif" || statusP === "terjadwal") && (
+                          <button onClick={() => hapusPromo(p.id)} className="text-[10px] text-[#A32D2D] hover:underline mt-1">
+                            Hapus promo
+                          </button>
+                        )}
+                      </td>
+                      <td className="p-3 align-top">
                         <button onClick={() => bukaRiwayat(p.id)} className="text-[#8B8D85]">
                           {expanded === p.id ? <ChevronUp size={16} /> : <ChevronDown size={16} />}
                         </button>
@@ -307,7 +373,7 @@ export default function KelolaHargaPage() {
                     </tr>
                     {expanded === p.id && (
                       <tr>
-                        <td colSpan={8} className="bg-[#FAFAF7] px-3 pb-3">
+                        <td colSpan={10} className="bg-[#FAFAF7] px-3 pb-3">
                           {!logs[p.id] ? (
                             <p className="text-xs text-[#8B8D85] py-2">Memuat riwayat...</p>
                           ) : logs[p.id].length === 0 ? (
