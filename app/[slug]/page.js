@@ -5,9 +5,10 @@ import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent, inisialisasiRef, getRefAktif } from "@/lib/tracking";
 import VerifiedBadge from "@/components/VerifiedBadge";
-import { getCart, addToCart, updateCartQty, removeFromCart, clearCart, cartTotalItems, cartSubtotal, cartTotalWeight } from "@/lib/cart";
+import { getCart, addToCart, updateCartQty, removeFromCart, clearCart, cartTotalItems, cartSubtotal, cartTotalWeight, sinkronkanCart } from "@/lib/cart";
 import PromoCarousel from "@/components/PromoCarousel";
-import { hargaPromo, promoAktif } from "@/lib/promo";
+import { hargaPromo, promoAktif, setOffsetWaktu } from "@/lib/promo";
+import { FlashSaleBanner, FlashSaleStrip, ChipCountdown, GRADIEN_FLASH } from "@/components/FlashSale";
 import { mergeTheme, HEADER_HEIGHTS, GRID_COLS } from "@/lib/theme";
 import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2, ShieldCheck, Zap, Sparkles } from "lucide-react";
 
@@ -37,6 +38,7 @@ export default function TokoPublik() {
   const { slug } = useParams();
   const [store, setStore] = useState(null);
   const [products, setProducts] = useState([]);
+  const [, setTickPromo] = useState(0); // dinaikin pas promo berakhir / jam server ke-sinkron, biar harga dihitung ulang
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState(null);
@@ -59,6 +61,8 @@ export default function TokoPublik() {
         .from("products").select("*").eq("store_id", storeData.id)
         .order("created_at", { ascending: false });
       setProducts(productsData || []);
+      sinkronkanCart(slug, productsData || []); // harga promo di keranjang ikut terbaru
+      setCart(getCart(slug));
       const { data: bannersData } = await supabase
         .from("store_banners").select("*").eq("store_id", storeData.id)
         .eq("is_active", true).order("sort_order", { ascending: true });
@@ -71,6 +75,19 @@ export default function TokoPublik() {
     fetchStore();
     setCart(getCart(slug));
   }, [slug]);
+
+  // Sinkron jam: countdown & status promo pakai jam SERVER, bukan jam HP pembeli.
+  useEffect(() => {
+    const t0 = Date.now();
+    fetch("/api/waktu", { cache: "no-store" })
+      .then((r) => r.json())
+      .then(({ now }) => {
+        const t1 = Date.now();
+        setOffsetWaktu(now - (t0 + t1) / 2); // dikoreksi setengah waktu bolak-balik request
+        setTickPromo((t) => t + 1);
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     const script = document.createElement("script");
@@ -117,6 +134,15 @@ export default function TokoPublik() {
     theme.product.cardStyle === "shadow" ? "shadow-md hover:shadow-lg" :
     theme.product.cardStyle === "bordered" ? "border-2" : "border";
   const imageAspectClass = theme.product.imageRatio === "portrait" ? "aspect-[3/4]" : "aspect-square";
+  const promoList = products.filter((p) => promoAktif(p));
+  const promoTercepat = [...promoList].sort((a, b) => new Date(a.promo_ends_at) - new Date(b.promo_ends_at))[0];
+  const diskonMaks = promoList.reduce((m, p) => Math.max(m, Number(p.promo_percent) || 0), 0);
+  const produkUrut = [...products].sort((a, b) => Number(promoAktif(b)) - Number(promoAktif(a))); // produk promo tampil duluan
+  function promoBerakhir() {
+    setTickPromo((t) => t + 1);
+    sinkronkanCart(slug, products);
+    setCart(getCart(slug));
+  }
   const onSurfaceText = warnaTeksAman(surface); // teks yang nempel di atas warna "surface" (nav bar, kartu produk, header non-banner)
 
   function handleBannerClick(banner) {
@@ -160,6 +186,7 @@ export default function TokoPublik() {
             </button>
           </div>
         </div>
+        {promoTercepat && <FlashSaleStrip endsAt={promoTercepat.promo_ends_at} onExpire={promoBerakhir} />}
       </nav>
 
       {/* HEADER */}
@@ -258,6 +285,11 @@ export default function TokoPublik() {
           </div>
         )}
 
+        {/* FLASH SALE BANNER */}
+        {promoTercepat && (
+          <FlashSaleBanner endsAt={promoTercepat.promo_ends_at} jumlahProduk={promoList.length} diskonMaks={diskonMaks} onExpire={promoBerakhir} />
+        )}
+
         {/* DIVIDER */}
         <div className="flex items-center gap-3 mb-6">
           <div className="flex-1 h-px" style={{ background: `${textColor}20` }} />
@@ -270,13 +302,13 @@ export default function TokoPublik() {
           <p className="text-center text-sm py-12" style={{ color: `${textColor}80` }}>Belum ada produk di toko ini.</p>
         ) : (
           <div className={`grid gap-4 md:gap-6 mb-16 ${GRID_COLS[theme.product.grid] || GRID_COLS["2"]}`}>
-            {products.map((p) => {
+            {produkUrut.map((p) => {
               const isBaru = p.created_at && (Date.now() - new Date(p.created_at).getTime()) < DUA_MINGGU_MS;
               const lagiPromo = promoAktif(p);
               return (
                 <button key={p.id} onClick={() => { setSelectedProduct(p); trackViewContent(store, p); catatEvent(supabase, store.id, "klik_produk", p.id); }}
                   className={`relative rounded-2xl overflow-hidden text-left transition-all duration-300 group hover:-translate-y-1 hover:shadow-xl ${cardBorderClass}`}
-                  style={{ background: surface, borderColor: theme.product.cardStyle === "bordered" ? accent : `${textColor}15` }}>
+                  style={{ background: surface, borderColor: lagiPromo ? "#E8590C" : theme.product.cardStyle === "bordered" ? accent : `${textColor}15`, boxShadow: lagiPromo ? "0 0 0 2px #E8590C55" : undefined }}>
                   {isBaru && (
                     <span className="absolute top-2.5 left-2.5 z-10 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full text-white flex items-center gap-1"
                       style={{ background: accent }}>
@@ -284,12 +316,12 @@ export default function TokoPublik() {
                     </span>
                   )}
                   {lagiPromo && (
-                    <span className="absolute top-2.5 right-2.5 z-10 text-[10px] font-bold uppercase tracking-wide px-2 py-1 rounded-full text-white"
-                      style={{ background: "#A32D2D" }}>
+                    <span className="absolute top-0 right-0 z-10 text-sm font-black px-2.5 py-1.5 rounded-bl-xl text-white shadow-md"
+                      style={{ background: GRADIEN_FLASH }}>
                       -{p.promo_percent}%
                     </span>
                   )}
-                  <div className={`${imageAspectClass} overflow-hidden`} style={{ background: `${accent}11` }}>
+                  <div className={`${imageAspectClass} overflow-hidden relative`} style={{ background: `${accent}11` }}>
                     {p.images?.[0] ? (
                       <img src={p.images[0]} alt={p.name}
                         className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
@@ -298,17 +330,23 @@ export default function TokoPublik() {
                         <span className="text-4xl opacity-20">👕</span>
                       </div>
                     )}
+                    {lagiPromo && <ChipCountdown endsAt={p.promo_ends_at} onExpire={promoBerakhir} className="absolute bottom-0 inset-x-0" />}
                   </div>
                   <div className="p-3.5">
                     <p className="text-sm font-semibold line-clamp-2 mb-1" style={{ color: onSurfaceText }}>{p.name}</p>
                     {theme.product.showPrice && (
                       lagiPromo ? (
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <p className="text-sm font-black" style={{ color: accent }}>
-                            Rp{hargaPromo(p.price, p).toLocaleString("id-ID")}
-                          </p>
-                          <p className="text-xs line-through" style={{ color: `${onSurfaceText}66` }}>
-                            Rp{Number(p.price).toLocaleString("id-ID")}
+                        <div>
+                          <div className="flex items-baseline gap-1.5 flex-wrap">
+                            <p className="text-base font-black" style={{ color: "#E5372A" }}>
+                              Rp{hargaPromo(p.price, p).toLocaleString("id-ID")}
+                            </p>
+                            <p className="text-xs line-through" style={{ color: `${onSurfaceText}80` }}>
+                              Rp{Number(p.price).toLocaleString("id-ID")}
+                            </p>
+                          </div>
+                          <p className="text-[11px] font-semibold mt-0.5" style={{ color: "#2E9E4F" }}>
+                            Hemat Rp{(Number(p.price) - hargaPromo(p.price, p)).toLocaleString("id-ID")}
                           </p>
                         </div>
                       ) : (
@@ -413,6 +451,7 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants?.length > 0 ? product.variants[0] : null
   );
+  const [, setTickModal] = useState(0);
   const unitPriceAsli = selectedVariant ? selectedVariant.price : product.price;
   const lagiPromo = promoAktif(product);
   const unitPrice = hargaPromo(unitPriceAsli, product);
@@ -420,7 +459,7 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
   const habis = stok !== undefined && stok !== null && stok <= 0;
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
+    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6 text-[#1C1C1A]">
       <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-[#E5E2D9] sticky top-0 bg-white z-10">
           <h2 className="font-bold text-[#1C1C1A]">Detail produk</h2>
@@ -446,6 +485,12 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
                 </span>
               )}
             </p>
+            {lagiPromo && (
+              <div className="mt-2 rounded-xl overflow-hidden text-white" style={{ background: GRADIEN_FLASH }}>
+                <p className="text-xs font-black px-3 pt-2 flex items-center gap-1.5"><Zap size={13} fill="currentColor" /> FLASH SALE -{product.promo_percent}% · Hemat Rp{(unitPriceAsli - unitPrice).toLocaleString("id-ID")}</p>
+                <ChipCountdown endsAt={product.promo_ends_at} onExpire={() => setTickModal((t) => t + 1)} />
+              </div>
+            )}
             {product.description && (
               <p className="text-sm text-[#5B6472] mt-2 leading-relaxed">{product.description}</p>
             )}
@@ -509,7 +554,7 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
 function CartDrawer({ cart, accent, onClose, onUpdateQty, onRemove, onCheckout }) {
   const subtotal = cartSubtotal(cart);
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
+    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6 text-[#1C1C1A]">
       <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md max-h-[85vh] overflow-y-auto flex flex-col">
         <div className="flex items-center justify-between p-4 border-b border-[#E5E2D9] sticky top-0 bg-white z-10">
           <h2 className="font-bold text-[#1C1C1A]">Keranjang kamu</h2>
@@ -730,7 +775,7 @@ function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderCo
   }
 
   return (
-    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6">
+    <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6 text-[#1C1C1A]">
       <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-[#E5E2D9] sticky top-0 bg-white z-10">
           <h2 className="font-bold text-[#1C1C1A]">{success ? "Pesanan berhasil" : "Pesan produk"}</h2>

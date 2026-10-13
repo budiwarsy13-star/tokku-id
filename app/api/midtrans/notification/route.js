@@ -200,16 +200,22 @@ export async function POST(request) {
       }
 
       // Ambil kredensial tracking toko ini, terus kirim event Purchase server-side.
-      // Semua 4 kolom ini ada langsung di tabel `stores` (diisi seller lewat
-      // halaman Dashboard > Toko), BUKAN di tabel terpisah.
-      const { data: storeCreds } = await supabaseAdmin
+      // ID publik (pixel / measurement ID) ada di tabel `stores`, tapi TOKEN RAHASIA
+      // (meta_access_token, ga4_api_secret) sengaja dipisah ke tabel `store_secrets`
+      // supaya gak ikut kebaca publik lewat halaman toko. JANGAN dibalikin ke `stores`.
+      const { data: storeIds } = await supabaseAdmin
         .from("stores")
-        .select("meta_pixel_id, meta_access_token, ga4_measurement_id, ga4_api_secret")
+        .select("meta_pixel_id, ga4_measurement_id")
         .eq("id", first.store_id)
         .maybeSingle();
+      const { data: storeSecrets } = await supabaseAdmin
+        .from("store_secrets")
+        .select("meta_access_token, ga4_api_secret")
+        .eq("store_id", first.store_id)
+        .maybeSingle();
 
-      if (storeCreds) {
-        await kirimPurchaseServerSide(storeCreds, updatedOrders, totalGabungan);
+      if (storeIds) {
+        await kirimPurchaseServerSide({ ...storeIds, ...(storeSecrets || {}) }, updatedOrders, totalGabungan);
       }
     }
 

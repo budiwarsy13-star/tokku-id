@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Flame } from "lucide-react";
+import { sekarang } from "@/lib/promo";
 
 function format(ms) {
   const total = Math.max(0, Math.floor(ms / 1000));
@@ -19,11 +20,11 @@ function format(ms) {
 // dihitung server pakai jam server (lihat /api/checkout).
 export default function PromoCountdown({ endsAt, onExpire, label = "Berakhir dalam", className = "" }) {
   const target = new Date(endsAt).getTime();
-  const [sisa, setSisa] = useState(() => target - Date.now());
+  const [sisa, setSisa] = useState(() => target - sekarang());
 
   useEffect(() => {
     const tick = () => {
-      const s = target - Date.now();
+      const s = target - sekarang();
       setSisa(s);
       if (s <= 0) onExpire?.();
     };
