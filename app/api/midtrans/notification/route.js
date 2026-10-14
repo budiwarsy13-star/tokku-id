@@ -7,6 +7,7 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { kirimPush } from "@/lib/push-server";
 import { kembalikanStok } from "@/lib/stock-server";
+import { bolehPakaiFitur, FITUR_BERBAYAR } from "@/lib/plan";
 
 // Service role, BUKAN client biasa -- ini request server-to-server dari
 // Midtrans (bukan dari browser), dan update ke tabel orders harus bisa
@@ -200,22 +201,22 @@ export async function POST(request) {
       }
 
       // Ambil kredensial tracking toko ini, terus kirim event Purchase server-side.
-      // ID publik (pixel / measurement ID) ada di tabel `stores`, tapi TOKEN RAHASIA
-      // (meta_access_token, ga4_api_secret) sengaja dipisah ke tabel `store_secrets`
-      // supaya gak ikut kebaca publik lewat halaman toko. JANGAN dibalikin ke `stores`.
-      const { data: storeIds } = await supabaseAdmin
+      // Semua 4 kolom ini ada langsung di tabel `stores` (diisi seller lewat
+      // halaman Dashboard > Toko), BUKAN di tabel terpisah.
+      //
+      // Pixel/CAPI itu fitur BERBAYAR (plan). Sebelum ini, kuncinya cuma ada
+      // di copy marketing ("paid only") tapi di kode semua seller bisa
+      // pakai -- sekarang beneran dikunci di sini, di server, bukan cuma di
+      // UI dashboard (yang bisa dilewatin kalau seller manggil API-nya
+      // langsung).
+      const { data: storeCreds } = await supabaseAdmin
         .from("stores")
-        .select("meta_pixel_id, ga4_measurement_id")
+        .select("plan, plan_aktif_sampai, meta_pixel_id, meta_access_token, ga4_measurement_id, ga4_api_secret")
         .eq("id", first.store_id)
         .maybeSingle();
-      const { data: storeSecrets } = await supabaseAdmin
-        .from("store_secrets")
-        .select("meta_access_token, ga4_api_secret")
-        .eq("store_id", first.store_id)
-        .maybeSingle();
 
-      if (storeIds) {
-        await kirimPurchaseServerSide({ ...storeIds, ...(storeSecrets || {}) }, updatedOrders, totalGabungan);
+      if (storeCreds && bolehPakaiFitur(storeCreds, FITUR_BERBAYAR.PIXEL_TRACKING)) {
+        await kirimPurchaseServerSide(storeCreds, updatedOrders, totalGabungan);
       }
     }
 
