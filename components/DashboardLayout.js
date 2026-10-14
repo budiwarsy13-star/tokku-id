@@ -4,7 +4,7 @@ import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import {
-  LayoutDashboard, Package, ShoppingBag, Store,
+  LayoutDashboard, Package, ShoppingBag, Store, Bot,
   LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles, Flame, MessageCircle
 } from "lucide-react";
 
@@ -18,6 +18,7 @@ const menuItems = [
   { icon: BarChart3,       label: "Laporan",         href: "/dashboard/laporan" },
   { icon: Users,           label: "Pelanggan",       href: "/dashboard/pelanggan" },
   { icon: MessageCircle,   label: "WA Blast",        href: "/dashboard/blast" },
+  { icon: Bot,           label: "Chat Bot",       href: "/dashboard/chat-bot" },
   { icon: Sparkles,        label: "Insight AI",      href: "/dashboard/insight" },
   { icon: Palette,         label: "Tampilan",        href: "/dashboard/tampilan" },
   { icon: Store,           label: "Pengaturan toko", href: "/dashboard/toko" },

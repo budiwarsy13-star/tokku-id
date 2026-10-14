@@ -13,7 +13,7 @@ const supa = createClient(
 
 export async function GET(req) {
   const { searchParams } = new URL(req.url);
-  const storeId = searchParams.get("storeId");
+  const storeId = searchParams.get("store_id") || searchParams.get("storeId");
   if (!storeId) return Response.json({ error: "storeId diperlukan" }, { status: 400 });
 
   const { data, error } = await supa
@@ -62,7 +62,8 @@ async function insertDefaultTemplates(storeId) {
 
 export async function POST(req) {
   const body = await req.json();
-  const { storeId, type, question, answer, sortOrder } = body;
+  const { storeId: _si, store_id, type, question, answer, sort_order, is_active, sortOrder } = body;
+  const storeId = store_id || _si;
   if (!storeId || !type || !answer) {
     return Response.json({ error: "storeId, type, answer wajib" }, { status: 400 });
   }
@@ -70,7 +71,8 @@ export async function POST(req) {
   const { data, error } = await supa.from("chat_templates").insert({
     store_id:   storeId,
     type, question, answer,
-    sort_order: sortOrder || 0,
+    sort_order: sort_order ?? sortOrder ?? 0,
+    is_active: is_active ?? true,
   }).select().single();
 
   if (error) return Response.json({ error: error.message }, { status: 500 });

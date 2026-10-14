@@ -245,6 +245,15 @@ export default function PesananPage() {
         message: `Pesanan ${ringkasanProduk} sudah ditandai selesai.`,
       });
     }
+
+    // WA notifikasi ke pembeli — fire & forget
+    if (newStatus === "shipped" || newStatus === "selesai") {
+      fetch("/api/wa/notify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "status_update", orderId: rowId }),
+      }).catch(() => {});
+    }
   }
 
   const counts = useMemo(() => {
