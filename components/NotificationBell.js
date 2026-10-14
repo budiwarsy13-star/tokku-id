@@ -33,6 +33,13 @@ export default function NotificationBell({ storeId }) {
   const [loading, setLoading] = useState(true);
   const ref = useRef(null);
 
+  // ── KEY FIX: channel name unik per instance ──────────────────────────
+  // Kalau channel name sama (misal dari dua instance NotificationBell
+  // di halaman yang sama), Supabase error "cannot add postgres_changes
+  // callback after subscribe()". Dengan suffix random per-instance,
+  // tiap komponen punya channel sendiri — tidak akan pernah conflict.
+  const channelName = useRef(`notif-bell-${storeId}-${Math.random().toString(36).slice(2, 8)}`);
+
   useEffect(() => {
     if (!storeId) return;
 
@@ -45,18 +52,13 @@ export default function NotificationBell({ storeId }) {
       .limit(30)
       .then(({ data }) => { setNotifs(data || []); setLoading(false); });
 
-    // ── KEY FIX: TIDAK pakai filter di postgres_changes ──────
-    // Filter by store_id dilakukan client-side karena filter non-PK
-    // pada postgres_changes sering gagal tanpa REPLICA IDENTITY FULL
-    // yang di-set secara konsisten. Ini pattern yang sama dengan
-    // unread badge yang sudah terbukti bekerja.
+    // Realtime — tanpa filter server-side, saring client-side
     const channel = supabase
-      .channel(`notif-bell-${storeId}-v2`)  // versi baru agar tidak konflik channel lama
+      .channel(channelName.current)
       .on("postgres_changes", {
         event:  "INSERT",
         schema: "public",
         table:  "notifications",
-        // SENGAJA tidak ada filter — saring client-side di bawah
       }, (payload) => {
         const n = payload.new;
         if (!n || n.store_id !== storeId) return; // filter client-side
