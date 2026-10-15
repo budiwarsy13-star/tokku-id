@@ -9,6 +9,7 @@ import YangPerluDilakukan from "@/components/YangPerluDilakukan";
 import { Package, ShoppingBag, Wallet, TrendingUp } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import UtmBreakdown from "@/components/UtmBreakdown";
+import { hitungSebagaiPenjualan } from "@/lib/order-status";
 
 function persenPerubahan(sekarang, kemarin) {
   if (kemarin === 0) return sekarang > 0 ? 100 : 0;
@@ -155,8 +156,8 @@ function DashboardShell({ store }) {
         supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "view_toko").gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
         supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "klik_produk").gte("created_at", awalHariIni.toISOString()),
         supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "klik_produk").gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
-        supabase.from("orders").select("id, total_price, status", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalHariIni.toISOString()),
-        supabase.from("orders").select("id, total_price, status", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
+        supabase.from("orders").select("id, total_price, status, payment_method, cod_paid_at", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalHariIni.toISOString()),
+        supabase.from("orders").select("id, total_price, status, payment_method, cod_paid_at", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
       ]);
 
       const pengunjung = pengunjungHariIni.count || 0;
@@ -165,8 +166,8 @@ function DashboardShell({ store }) {
       const klikY = klikKemarin.count || 0;
       const pesanan = orderHariIni.count || 0;
       const pesananY = orderKemarin.count || 0;
-      const penjualan = (orderHariIni.data || []).filter((o) => o.status !== "pending").reduce((s, o) => s + Number(o.total_price), 0);
-      const penjualanY = (orderKemarin.data || []).filter((o) => o.status !== "pending").reduce((s, o) => s + Number(o.total_price), 0);
+      const penjualan = (orderHariIni.data || []).filter(hitungSebagaiPenjualan).reduce((s, o) => s + Number(o.total_price), 0);
+      const penjualanY = (orderKemarin.data || []).filter(hitungSebagaiPenjualan).reduce((s, o) => s + Number(o.total_price), 0);
       const konversi = pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0;
       const konversiY = pengunjungY > 0 ? (pesananY / pengunjungY) * 100 : 0;
 
@@ -191,11 +192,11 @@ function DashboardShell({ store }) {
         .order("created_at", { ascending: false });
 
       const totalOrder = orders?.length || 0;
-      const ordersPaid = orders?.filter((o) => o.status !== "pending") || [];
+      const ordersPaid = orders?.filter(hitungSebagaiPenjualan) || [];
       const totalPendapatan = ordersPaid.reduce((sum, o) => sum + Number(o.total_price), 0);
 
       const jualPerProduk = {};
-      orders?.forEach((o) => {
+      ordersPaid.forEach((o) => {
         jualPerProduk[o.product_name] = (jualPerProduk[o.product_name] || 0) + o.quantity;
       });
       const produkTerlaris = Object.entries(jualPerProduk)
@@ -239,6 +240,10 @@ function DashboardShell({ store }) {
   const statusBadge = {
     pending: { label: "Menunggu bayar", className: "bg-[#F1EFE8] text-[#5B6472]" },
     paid: { label: "Dibayar", className: "bg-[#EAF3DE] text-[#3B6D11]" },
+    cod: { label: "COD · Perlu dikirim", className: "bg-[#FCEFE3] text-[#B8600B]" },
+    shipped: { label: "Dikirim", className: "bg-[#E8F0FA] text-[#2563EB]" },
+    selesai: { label: "Selesai", className: "bg-[#F1EFE8] text-[#5B6472]" },
+    gagal: { label: "Dibatalkan", className: "bg-[#FBEAEA] text-[#A32D2D]" },
   };
 
   return (

@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
-import { Save, Bell, Store, Globe } from "lucide-react";
+import NotificationBell from "@/components/NotificationBell";
+import { Save, Bell, Store, Globe, Banknote } from "lucide-react";
 
 export default function PengaturanPage() {
   const [store, setStore] = useState(null);
@@ -16,6 +17,8 @@ export default function PengaturanPage() {
   const [description, setDescription] = useState("");
   const [waNumber, setWaNumber] = useState("");
   const [waEnabled, setWaEnabled] = useState(false);
+  const [codEnabled, setCodEnabled] = useState(false);
+  const [codMaxTotal, setCodMaxTotal] = useState("");
 
   useEffect(() => {
     async function init() {
@@ -28,6 +31,8 @@ export default function PengaturanPage() {
       setDescription(storeData.description || "");
       setWaNumber(storeData.wa_number || "");
       setWaEnabled(storeData.wa_notif_enabled || false);
+      setCodEnabled(storeData.cod_enabled || false);
+      setCodMaxTotal(storeData.cod_max_total ? String(storeData.cod_max_total) : "");
       setLoading(false);
     }
     init();
@@ -42,6 +47,8 @@ export default function PengaturanPage() {
       description: description.trim(),
       wa_number: waNumber.trim() || null,
       wa_notif_enabled: waEnabled,
+      cod_enabled: codEnabled,
+      cod_max_total: parseInt(codMaxTotal.replace(/\D/g, ""), 10) > 0 ? parseInt(codMaxTotal.replace(/\D/g, ""), 10) : null,
     }).eq("id", store.id);
     setSaving(false);
     setSaved(true);
@@ -58,6 +65,7 @@ export default function PengaturanPage() {
     <DashboardLayout store={store} activeMenu="/dashboard/pengaturan" headerTitle="Pengaturan">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-[#1C1C1A]">Pengaturan toko</h1>
+        <NotificationBell storeId={store.id} />
       </div>
 
       <form onSubmit={handleSave} className="space-y-5 max-w-2xl">
@@ -131,6 +139,56 @@ export default function PengaturanPage() {
                 <li>Ada pesanan COD baru</li>
               </ul>
             </div>
+          </div>
+        </div>
+
+        {/* Metode pembayaran: COD */}
+        <div className="bg-white rounded-xl border border-[#E5E2D9] overflow-hidden">
+          <div className="px-5 py-4 border-b border-[#E5E2D9] flex items-center gap-2">
+            <Banknote size={17} className="text-[#D85A30]" />
+            <h2 className="font-semibold text-[#1C1C1A] text-sm">Bayar di tempat (COD)</h2>
+          </div>
+          <div className="p-5 space-y-4">
+            <div className="flex items-center justify-between py-1">
+              <div>
+                <p className="text-sm font-medium text-[#1C1C1A]">Terima pembayaran COD</p>
+                <p className="text-xs text-[#8B8D85] mt-0.5">Pembeli bisa bayar ke kurir saat paket tiba</p>
+              </div>
+              <button type="button" onClick={() => setCodEnabled((p) => !p)}
+                className={`relative w-11 h-6 rounded-full transition-colors ${codEnabled ? "bg-[#D85A30]" : "bg-[#C5C3BB]"}`}>
+                <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${codEnabled ? "translate-x-5" : ""}`} />
+              </button>
+            </div>
+
+            {codEnabled && (
+              <>
+                <div>
+                  <label className="text-xs font-medium text-[#5B6472] block mb-1.5">
+                    Batas nominal COD <span className="text-[#8B8D85] font-normal">(opsional)</span>
+                  </label>
+                  <div className="flex items-center gap-2 px-4 py-2.5 border border-[#E5E2D9] rounded-lg focus-within:border-[#D85A30]">
+                    <span className="text-sm text-[#8B8D85]">Rp</span>
+                    <input type="text" inputMode="numeric" value={codMaxTotal}
+                      onChange={(e) => setCodMaxTotal(e.target.value.replace(/\D/g, ""))}
+                      placeholder="Kosongkan kalau tanpa batas"
+                      className="flex-1 text-sm focus:outline-none" />
+                  </div>
+                  <p className="text-xs text-[#8B8D85] mt-1.5">
+                    Pesanan di atas nominal ini wajib bayar online. Berguna buat mengurangi risiko order COD iseng.
+                  </p>
+                </div>
+
+                <div className="bg-[#F1EFE8] rounded-lg px-4 py-3">
+                  <p className="text-xs text-[#5B6472] font-medium mb-1">Cara kerja COD di Tokku.id:</p>
+                  <ul className="text-xs text-[#8B8D85] space-y-1 list-disc list-inside">
+                    <li>Kamu dapat notifikasi pesanan COD, lalu kirim lewat layanan COD ekspedisi dan isi nomor resi</li>
+                    <li>Status jadi <em>Dikirim</em> tapi tetap belum dibayar sampai kurir menagih pembeli</li>
+                    <li>Pesanan selesai setelah kurir menyetor uang COD (kamu juga bisa menandainya manual)</li>
+                    <li>Kalau pembeli menolak paket, tandai "COD ditolak" supaya stok kembali</li>
+                  </ul>
+                </div>
+              </>
+            )}
           </div>
         </div>
 

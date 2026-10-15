@@ -37,6 +37,15 @@ export async function POST(request) {
       return Response.json({ success: false, message: "Pesanan gak ketemu." }, { status: 404 });
     }
 
+    // COD: pesanan baru selesai setelah pembeli membayar ke kurir (trigger dari
+    // ekspedisi / konfirmasi seller), bukan lewat tombol "sudah diterima".
+    if (first.payment_method === "cod") {
+      return Response.json({
+        success: false,
+        message: "Pesanan COD otomatis selesai setelah kamu bayar ke kurir saat paket tiba.",
+      }, { status: 400 });
+    }
+
     if (first.status !== "shipped") {
       return Response.json({
         success: false,

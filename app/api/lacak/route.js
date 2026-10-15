@@ -62,6 +62,8 @@ export async function POST(request) {
         fullAddress: first.full_address,
         createdAt: first.created_at,
         paidAt: first.paid_at,
+        paymentMethod: first.payment_method || "online",
+        codPaidAt: first.cod_paid_at,
         shippedAt: first.shipped_at,
         completedAt: first.completed_at,
         storeName: first.stores?.name,

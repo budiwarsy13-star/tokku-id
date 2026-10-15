@@ -4,13 +4,15 @@ import { useState, useEffect, useMemo, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import { buatNotifikasi } from "@/lib/notifications";
+import { isCod, isCodBelumLunas } from "@/lib/order-status";
 import {
   ShoppingBag, Tag, Clock, Truck, CheckCircle2, XCircle,
-  Search, MessageCircle, Send, X
+  Search, MessageCircle, Send, X, Banknote
 } from "lucide-react";
 
 const STATUS_LABEL = {
   pending:      { label: "Menunggu",       color: "bg-[#FFF4E0] text-[#B8860B]" },
+  cod:          { label: "COD · Perlu dikirim", color: "bg-[#FCEFE3] text-[#B8600B]" },
   paid:         { label: "Dibayar",        color: "bg-[#EAF1E8] text-[#3B6D11]" },
   shipped:      { label: "Dikirim",        color: "bg-[#E8F0FA] text-[#2563EB]" },
   selesai:      { label: "Selesai",        color: "bg-[#F1EFE8] text-[#5B6472]" },
@@ -22,8 +24,9 @@ const STATUS_LABEL = {
 const TABS = [
   { key: "semua",         label: "Semua",          match: () => true },
   { key: "menunggu",      label: "Menunggu bayar", match: (o) => o.status === "pending" },
-  { key: "perlu_diproses",label: "Perlu diproses", match: (o) => o.status === "paid" },
+  { key: "perlu_diproses",label: "Perlu diproses", match: (o) => o.status === "paid" || o.status === "cod" },
   { key: "dikirim",       label: "Sedang dikirim", match: (o) => o.status === "shipped" },
+  { key: "cod_belum_lunas", label: "COD belum lunas", match: (o) => isCod(o) && isCodBelumLunas(o) && (o.status === "cod" || o.status === "shipped") },
   { key: "selesai",       label: "Selesai",        match: (o) => o.status === "selesai" },
   { key: "review",        label: "Perlu review",   match: (o) => o.status === "perlu_review" },
   { key: "dibatalkan",    label: "Dibatalkan",     match: (o) => o.status === "gagal" },
@@ -236,7 +239,9 @@ export default function PesananPage() {
       await buatNotifikasi(supabase, {
         storeId: store.id, orderId: rowId, type: "delivery_update",
         title: "Status pengiriman diperbarui",
-        message: `Pesanan ${ringkasanProduk} sudah ditandai dikirim.`,
+        message: isCod(order)
+          ? `Pesanan COD ${ringkasanProduk} sudah ditandai dikirim. Belum dibayar — kurir akan menagih ke pembeli.`
+          : `Pesanan ${ringkasanProduk} sudah ditandai dikirim.`,
       });
     } else if (newStatus === "selesai") {
       await buatNotifikasi(supabase, {
@@ -245,21 +250,48 @@ export default function PesananPage() {
         message: `Pesanan ${ringkasanProduk} sudah ditandai selesai.`,
       });
     }
+  }
 
-    // WA notifikasi ke pembeli — fire & forget
-    if (newStatus === "shipped" || newStatus === "selesai") {
-      fetch("/api/wa/notify", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "status_update", orderId: rowId }),
-      }).catch(() => {});
-    }
+  // Aksi khusus COD lewat API server (butuh validasi + stok balik + notifikasi).
+  // "lunas"  = uang COD sudah diterima (jalur manual; otomatis lewat trigger ekspedisi)
+  // "batal"  = dibatalkan seller / ditolak pembeli -> stok dikembalikan
+  async function aksiCod(order, aksi) {
+    const pesan = aksi === "lunas"
+      ? `Konfirmasi uang COD ${rupiahTotal(order)} sudah diterima dari kurir/pembeli? Pesanan akan jadi Selesai.`
+      : order.status === "shipped"
+        ? "Tandai COD ditolak / gagal diantar? Stok akan dikembalikan."
+        : "Batalkan pesanan COD ini? Stok akan dikembalikan.";
+    if (!confirm(pesan)) return;
+
+    const { data: { session } } = await supabase.auth.getSession();
+    const res = await fetch(`/api/cod/${aksi === "lunas" ? "lunas" : "batal"}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
+      body: JSON.stringify({ orderId: order.midtrans_order_id }),
+    });
+    const data = await res.json();
+    if (!data.success) { alert(data.message || "Gagal memproses pesanan COD."); return; }
+
+    const patch = aksi === "lunas"
+      ? { status: "selesai", cod_paid_at: data.codPaidAt, cod_paid_source: "seller_manual", completed_at: data.completedAt }
+      : { status: "gagal" };
+    setOrders((prev) => prev.map((o) => (o.midtrans_order_id === order.midtrans_order_id ? { ...o, ...patch } : o)));
+  }
+
+  // Total tagihan COD = jumlah total_price semua baris 1 transaksi (sudah termasuk ongkir & diskon).
+  const totalPerTransaksi = useMemo(() => {
+    const m = {};
+    for (const o of orders) m[o.midtrans_order_id] = (m[o.midtrans_order_id] || 0) + Number(o.total_price || 0);
+    return m;
+  }, [orders]);
+  function rupiahTotal(o) {
+    return "Rp" + Number(totalPerTransaksi[o.midtrans_order_id] ?? o.total_price ?? 0).toLocaleString("id-ID");
   }
 
   const counts = useMemo(() => {
     const c = { perlu_diproses: 0, dikirim: 0, selesai: 0, dibatalkan: 0 };
     for (const o of orders) {
-      if (o.status === "paid")    c.perlu_diproses++;
+      if (o.status === "paid" || o.status === "cod") c.perlu_diproses++;
       else if (o.status === "shipped") c.dikirim++;
       else if (o.status === "selesai") c.selesai++;
       else if (o.status === "gagal")   c.dibatalkan++;
@@ -374,6 +406,19 @@ export default function PesananPage() {
                           className="text-xs text-[#8B8D85] font-mono hover:text-[#D85A30] hover:underline">
                           {o.midtrans_order_id}
                         </button>
+                        {isCod(o) && (
+                          <div className="mt-1.5 flex items-start gap-1.5 text-[11px] leading-snug text-[#B8600B] bg-[#FCEFE3] rounded-md px-2 py-1.5 max-w-[240px]">
+                            <Banknote size={13} className="mt-px flex-shrink-0" />
+                            <span>
+                              <strong>Pesanan ini menggunakan pembayaran COD</strong>
+                              <br />
+                              {o.status === "cod" && `Belum dikirim · tagih ${rupiahTotal(o)} lewat kurir COD.`}
+                              {o.status === "shipped" && !o.cod_paid_at && `Belum dibayar · menunggu kurir menyetor ${rupiahTotal(o)}.`}
+                              {o.status === "selesai" && o.cod_paid_at && `Lunas ${new Date(o.cod_paid_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })} (${o.cod_paid_source === "courier_webhook" ? "dari ekspedisi" : "konfirmasi seller"}).`}
+                              {o.status === "gagal" && "Dibatalkan / ditolak pembeli."}
+                            </span>
+                          </div>
+                        )}
                       </td>
                       <td className="px-4 py-3 text-[#5B6472]">
                         {o.buyer_name}<br />
@@ -409,6 +454,27 @@ export default function PesananPage() {
                       </td>
 
                       <td className="px-4 py-3">
+                        {isCod(o) ? (
+                          <select
+                            value={o.status}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === "shipped") setOrderUntukResi(o);
+                              else if (v === "selesai") aksiCod(o, "lunas");
+                              else if (v === "gagal") aksiCod(o, "batal");
+                            }}
+                            disabled={o.status === "selesai" || o.status === "gagal"}
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
+                          >
+                            {o.status === "cod" && <option value="cod">COD · Perlu dikirim</option>}
+                            <option value="shipped">Dikirim (belum dibayar)</option>
+                            {o.status === "shipped" && <option value="selesai">Selesai (COD lunas)</option>}
+                            {o.status === "selesai" && <option value="selesai">Selesai</option>}
+                            {o.status === "gagal"
+                              ? <option value="gagal">Dibatalkan</option>
+                              : <option value="gagal">{o.status === "shipped" ? "COD ditolak / gagal" : "Batalkan pesanan"}</option>}
+                          </select>
+                        ) : (
                         <select
                           value={o.status}
                           onChange={(e) => {
@@ -424,6 +490,7 @@ export default function PesananPage() {
                           <option value="selesai">Selesai</option>
                           {o.status === "gagal" && <option value="gagal">Dibatalkan</option>}
                         </select>
+                        )}
                         {o.waybill_number && (
                           <button onClick={() => setOrderUntukResi(o)}
                             className="block text-[11px] text-[#8B8D85] font-mono mt-1 hover:text-[#D85A30] hover:underline">
@@ -443,6 +510,7 @@ export default function PesananPage() {
       {orderUntukResi && (
         <ResiModal
           order={orderUntukResi}
+          codAmount={isCod(orderUntukResi) ? Number(totalPerTransaksi[orderUntukResi.midtrans_order_id] ?? orderUntukResi.total_price) : null}
           onClose={() => setOrderUntukResi(null)}
           onSubmit={(waybillNumber) => {
             updateStatus(orderUntukResi.id, "shipped", waybillNumber);
@@ -534,7 +602,7 @@ export default function PesananPage() {
 }
 
 // ── RESI MODAL (tidak berubah) ──────────────────────────────
-function ResiModal({ order, onClose, onSubmit }) {
+function ResiModal({ order, codAmount, onClose, onSubmit }) {
   const [waybillNumber, setWaybillNumber] = useState(order.waybill_number || "");
   function handleSubmit(e) {
     e.preventDefault();
@@ -556,6 +624,13 @@ function ResiModal({ order, onClose, onSubmit }) {
           <div className="bg-[#FAECE7] text-[#712B13] text-xs px-3 py-2.5 rounded-lg">
             Ambil nomor resi dari struk/label yang dikasih kurir pas kamu drop-off atau pas paket dijemput.
           </div>
+          {codAmount != null && (
+            <div className="bg-[#FCEFE3] text-[#B8600B] text-xs px-3 py-2.5 rounded-lg">
+              <strong>Pesanan ini menggunakan pembayaran COD.</strong> Saat bikin pengiriman, pilih layanan COD di
+              ekspedisi dan isi nilai tagihan <strong>Rp{codAmount.toLocaleString("id-ID")}</strong> (sudah termasuk ongkir).
+              Status jadi <em>Dikirim</em> tapi tetap <em>belum dibayar</em> sampai kurir menagih pembeli.
+            </div>
+          )}
           <div>
             <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Nomor resi (AWB)</label>
             <input type="text" required autoFocus value={waybillNumber}
@@ -580,8 +655,10 @@ function ResiModal({ order, onClose, onSubmit }) {
 }
 
 function hitungBatasKirim(order) {
-  if (order.status !== "paid" || !order.paid_at) return null;
-  const deadline = new Date(order.paid_at).getTime() + 24 * 60 * 60 * 1000;
+  // Online: 24 jam sejak dibayar. COD: 24 jam sejak pesanan dibuat.
+  const acuan = order.status === "paid" ? order.paid_at : order.status === "cod" ? order.created_at : null;
+  if (!acuan) return null;
+  const deadline = new Date(acuan).getTime() + 24 * 60 * 60 * 1000;
   const sisaMs   = deadline - Date.now();
   if (sisaMs <= 0) return { label: "Lewat batas!", color: "bg-[#FBEAEA] text-[#A32D2D]" };
   const sisaJam  = Math.ceil(sisaMs / (60 * 60 * 1000));

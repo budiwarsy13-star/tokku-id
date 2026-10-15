@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Link2, Copy, Check, Megaphone } from "lucide-react";
+import { hitungSebagaiPenjualan } from "@/lib/order-status";
 
 const PRESET = ["igstory", "igbio", "wa", "tiktok", "fb", "shopee"];
 const HARI = 30;
@@ -24,7 +25,7 @@ export default function UtmBreakdown({ store }) {
       const sejak = new Date(Date.now() - HARI * 24 * 60 * 60 * 1000).toISOString();
       const [ordersRes, eventsRes] = await Promise.all([
         supabase.from("orders")
-          .select("id, midtrans_order_id, total_price, status, ref_source")
+          .select("id, midtrans_order_id, total_price, status, ref_source, payment_method, cod_paid_at")
           .eq("store_id", store.id).gte("created_at", sejak),
         supabase.from("store_events")
           .select("ref_source")
@@ -45,7 +46,7 @@ export default function UtmBreakdown({ store }) {
         const item = ambil(k);
         const trx = o.midtrans_order_id || o.id;
         item.pesanan.add(trx);
-        if (o.status !== "pending") {
+        if (hitungSebagaiPenjualan(o)) {
           item.dibayar.add(trx);
           item.omzet += Number(o.total_price);
         }

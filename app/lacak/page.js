@@ -13,6 +13,14 @@ const TAHAPAN = [
 
 const URUTAN_STATUS = ["pending", "paid", "shipped", "selesai"];
 
+// Order COD: gak ada tahap "pembayaran diterima" di awal — bayarnya ke kurir.
+const TAHAPAN_COD = [
+  { key: "pending", label: "Pesanan COD dibuat", icon: Clock },
+  { key: "shipped", label: "Dikirim — bayar ke kurir saat paket tiba", icon: Truck },
+  { key: "selesai", label: "Dibayar & diterima", icon: PackageCheck },
+];
+const URUTAN_COD = ["cod", "shipped", "selesai"];
+
 export default function LacakPesananPage() {
   return (
     <Suspense fallback={
@@ -80,7 +88,11 @@ function LacakPesananContent() {
     }
   }
 
-  const stepAktif = result ? URUTAN_STATUS.indexOf(result.status === "gagal" ? "pending" : result.status) : -1;
+  const adalahCod = result?.paymentMethod === "cod";
+  const tahapanAktif = adalahCod ? TAHAPAN_COD : TAHAPAN;
+  const stepAktif = result
+    ? (adalahCod ? URUTAN_COD : URUTAN_STATUS).indexOf(result.status === "gagal" ? (adalahCod ? "cod" : "pending") : result.status)
+    : -1;
 
   return (
     <main className="min-h-screen bg-[#FAFAF7] px-6 py-12">
@@ -138,7 +150,7 @@ function LacakPesananContent() {
             <div className="flex items-center justify-between mb-1">
               <p className="text-xs text-[#8B8D85] font-mono">{result.orderId}</p>
               {result.status === "gagal" && (
-                <span className="text-xs bg-[#FBEAEA] text-[#A32D2D] px-2 py-0.5 rounded-full font-medium">Pembayaran gagal</span>
+                <span className="text-xs bg-[#FBEAEA] text-[#A32D2D] px-2 py-0.5 rounded-full font-medium">{adalahCod ? "Pesanan dibatalkan" : "Pembayaran gagal"}</span>
               )}
             </div>
             <h2 className="font-bold text-[#1C1C1A] mb-0.5">
@@ -161,7 +173,7 @@ function LacakPesananContent() {
             {/* TIMELINE STATUS */}
             {result.status !== "gagal" && (
               <div className="mb-6">
-                {TAHAPAN.map((tahap, i) => {
+                {tahapanAktif.map((tahap, i) => {
                   const sudahLewat = i <= stepAktif;
                   const waktuLabel =
                     tahap.key === "pending" ? result.createdAt :
@@ -176,7 +188,7 @@ function LacakPesananContent() {
                         ) : (
                           <Circle size={20} className="text-[#D1CFC5]" />
                         )}
-                        {i < TAHAPAN.length - 1 && (
+                        {i < tahapanAktif.length - 1 && (
                           <div className={`w-0.5 flex-1 my-1 ${i < stepAktif ? "bg-[#D85A30]" : "bg-[#E5E2D9]"}`} style={{ minHeight: 24 }} />
                         )}
                       </div>
@@ -194,6 +206,14 @@ function LacakPesananContent() {
               </div>
             )}
 
+            {/* INFO COD */}
+            {adalahCod && (result.status === "cod" || result.status === "shipped") && (
+              <div className="mb-4 px-4 py-3 rounded-xl bg-[#FCEFE3] text-[#B8600B] text-sm">
+                <strong>Pembayaran COD.</strong> Siapkan <strong>Rp{Number(result.totalPrice).toLocaleString("id-ID")}</strong> untuk kurir.
+                Bayar saat paket tiba, tanpa perlu buka paket dulu.
+              </div>
+            )}
+
             {/* LACAK POSISI PAKET (muncul kalau udah ada nomor resi) */}
             {result.waybillNumber && (result.status === "shipped" || result.status === "selesai") && (
               <a
@@ -208,7 +228,7 @@ function LacakPesananContent() {
             )}
 
             {/* KONFIRMASI DITERIMA (cuma muncul kalau status "shipped") */}
-            {result.status === "shipped" && (
+            {result.status === "shipped" && !adalahCod && (
               <div className="mb-6">
                 <button
                   onClick={handleKonfirmasiDiterima}

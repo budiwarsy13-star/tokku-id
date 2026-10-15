@@ -635,11 +635,20 @@ function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderCo
   const [cekingDiskon, setCekingDiskon] = useState(false);
   const [diskonError, setDiskonError] = useState("");
   const [lastOrderId, setLastOrderId] = useState("");
+  const [paymentMethod, setPaymentMethod] = useState("online"); // "online" | "cod"
 
   const subtotal = cartSubtotal(items);
   const totalBerat = cartTotalWeight(items);
   const totalSebelumDiskon = subtotal + (selectedOngkir?.cost || 0);
   const totalPrice = Math.max(totalSebelumDiskon - (diskonTerpakai?.discountAmount || 0), 0);
+
+  // COD cuma muncul kalau seller mengaktifkannya; ada batas nominal opsional.
+  const codTersedia = !!store.cod_enabled;
+  const codBatas = Number(store.cod_max_total || 0);
+  const codMelebihiBatas = codBatas > 0 && totalPrice > codBatas;
+  useEffect(() => {
+    if (paymentMethod === "cod" && (!codTersedia || codMelebihiBatas)) setPaymentMethod("online");
+  }, [paymentMethod, codTersedia, codMelebihiBatas]);
 
   async function handleTerapkanDiskon(e) {
     e.preventDefault();
@@ -731,6 +740,7 @@ function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderCo
         selectedCourier: { name: selectedOngkir.name, service: selectedOngkir.service },
         discountCode: diskonTerpakai?.code || null,
         refSource: refSource || null,
+        paymentMethod, // "online" | "cod"
         items: items.map((item) => ({
           productId: item.productId,
           variantName: item.variantName || null,
@@ -748,6 +758,14 @@ function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderCo
 
     const orderId = checkoutData.orderId;
     setLastOrderId(orderId);
+
+    // COD: langsung selesai, gak perlu Midtrans
+    if (paymentMethod === "cod") {
+      onOrderComplete();
+      setPaymentStatus("paid");
+      setSuccess(true);
+      return;
+    }
 
     window.snap.pay(checkoutData.token, {
       onSuccess: async () => {
@@ -790,7 +808,9 @@ function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderCo
             </div>
             <p className="text-sm text-[#5B6472] mb-1">Terima kasih, {buyerName}!</p>
             <p className="text-sm text-[#8B8D85] mb-6">
-              {paymentStatus === "paid"
+              {paymentStatus === "paid" && paymentMethod === "cod"
+                ? "Pesanan COD kamu berhasil dibuat! Bayar ke kurir saat barang tiba ya."
+                : paymentStatus === "paid"
                 ? "Pembayaran kamu sudah berhasil. Pesananmu udah masuk ke toko."
                 : "Pesananmu tercatat! Selesaikan pembayaran sesuai instruksi, status bakal otomatis berubah begitu pembayaran dikonfirmasi."}
             </p>
@@ -971,6 +991,43 @@ function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderCo
               </div>
             )}
 
+            {/* METODE PEMBAYARAN (muncul kalau toko mengaktifkan COD) */}
+            {destinasi && selectedOngkir && codTersedia && (
+              <div>
+                <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-2">Metode pembayaran</label>
+                <div className="grid grid-cols-2 gap-2">
+                  <button type="button" onClick={() => setPaymentMethod("online")}
+                    className="py-3 rounded-xl text-sm font-medium border-2 transition-all"
+                    style={{
+                      borderColor: paymentMethod === "online" ? accent : "#E5E2D9",
+                      background: paymentMethod === "online" ? `${accent}0D` : "white",
+                      color: paymentMethod === "online" ? accent : "#5B6472",
+                    }}>
+                    💳 Transfer / Online
+                  </button>
+                  <button type="button" onClick={() => setPaymentMethod("cod")} disabled={codMelebihiBatas}
+                    className="py-3 rounded-xl text-sm font-medium border-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed"
+                    style={{
+                      borderColor: paymentMethod === "cod" ? accent : "#E5E2D9",
+                      background: paymentMethod === "cod" ? `${accent}0D` : "white",
+                      color: paymentMethod === "cod" ? accent : "#5B6472",
+                    }}>
+                    🚚 COD
+                  </button>
+                </div>
+                {codMelebihiBatas && (
+                  <p className="text-xs text-[#5B6472] mt-2 bg-[#F1EFE8] px-3 py-2 rounded-lg">
+                    COD hanya untuk total sampai Rp{codBatas.toLocaleString("id-ID")}. Untuk nominal ini pilih pembayaran online ya.
+                  </p>
+                )}
+                {paymentMethod === "cod" && (
+                  <p className="text-xs text-[#5B6472] mt-2 bg-[#F1EFE8] px-3 py-2 rounded-lg">
+                    Bayar langsung ke kurir saat barang tiba. Siapkan uang pas ya!
+                  </p>
+                )}
+              </div>
+            )}
+
             <div className="pt-3 border-t border-[#E5E2D9] space-y-1.5">
               <div className="flex justify-between text-sm text-[#5B6472]">
                 <span>Subtotal</span><span>Rp{subtotal.toLocaleString("id-ID")}</span>
@@ -992,7 +1049,7 @@ function CartCheckoutModal({ items, store, accent, refSource, onClose, onOrderCo
             <button type="submit" disabled={saving}
               className="w-full py-3.5 text-white rounded-xl font-bold transition-opacity disabled:opacity-50"
               style={{ background: accent }}>
-              {saving ? "Memproses..." : "Bayar Sekarang"}
+              {saving ? "Memproses..." : paymentMethod === "cod" ? "Pesan Sekarang (COD)" : "Bayar Sekarang"}
             </button>
           </form>
         )}

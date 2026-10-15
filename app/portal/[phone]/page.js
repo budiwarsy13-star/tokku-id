@@ -10,8 +10,8 @@ import {
 
 const TABS = [
   { key: "perlu_dibayar", label: "Perlu Dibayar", icon: Clock,     statuses: ["pending"] },
-  { key: "dikemas",       label: "Dikemas",        icon: Package,   statuses: ["paid"] },
-  // "paid" = sudah bayar, seller sedang mempersiapkan paket
+  { key: "dikemas",       label: "Dikemas",        icon: Package,   statuses: ["paid", "cod"] },
+  // "paid" = sudah bayar; "cod" = pesanan COD menunggu dikemas/dikirim seller, seller sedang mempersiapkan paket
   { key: "dikirim",       label: "Dikirim",        icon: Truck,     statuses: ["shipped"] },
   // "shipped" = paket sudah di tangan kurir, sedang dalam perjalanan
   { key: "untuk_diulas",  label: "Untuk Diulas",   icon: Star,      statuses: ["selesai"] },

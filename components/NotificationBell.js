@@ -4,11 +4,14 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import {
   Bell, ShoppingBag, Wallet, AlertTriangle,
-  Truck, CheckCircle2, MessageCircle, RotateCcw
+  Truck, CheckCircle2, MessageCircle, RotateCcw, Banknote
 } from "lucide-react";
 
 const ICON_BY_TYPE = {
   order_masuk:      { icon: ShoppingBag,   color: "#2563EB" },
+  cod_order:        { icon: Banknote,      color: "#B8600B" },
+  cod_paid:         { icon: Wallet,        color: "#3B6D11" },
+  cod_batal:        { icon: AlertTriangle, color: "#A32D2D" },
   pembayaran_masuk: { icon: Wallet,        color: "#3B6D11" },
   order_pending:    { icon: AlertTriangle, color: "#B8860B" },
   delivery_update:  { icon: Truck,         color: "#2563EB" },
@@ -33,13 +36,6 @@ export default function NotificationBell({ storeId }) {
   const [loading, setLoading] = useState(true);
   const ref = useRef(null);
 
-  // ── KEY FIX: channel name unik per instance ──────────────────────────
-  // Kalau channel name sama (misal dari dua instance NotificationBell
-  // di halaman yang sama), Supabase error "cannot add postgres_changes
-  // callback after subscribe()". Dengan suffix random per-instance,
-  // tiap komponen punya channel sendiri — tidak akan pernah conflict.
-  const channelName = useRef(`notif-bell-${storeId}-${Math.random().toString(36).slice(2, 8)}`);
-
   useEffect(() => {
     if (!storeId) return;
 
@@ -52,13 +48,18 @@ export default function NotificationBell({ storeId }) {
       .limit(30)
       .then(({ data }) => { setNotifs(data || []); setLoading(false); });
 
-    // Realtime — tanpa filter server-side, saring client-side
+    // ── KEY FIX: TIDAK pakai filter di postgres_changes ──────
+    // Filter by store_id dilakukan client-side karena filter non-PK
+    // pada postgres_changes sering gagal tanpa REPLICA IDENTITY FULL
+    // yang di-set secara konsisten. Ini pattern yang sama dengan
+    // unread badge yang sudah terbukti bekerja.
     const channel = supabase
-      .channel(channelName.current)
+      .channel(`notif-bell-${storeId}-v2`)  // versi baru agar tidak konflik channel lama
       .on("postgres_changes", {
         event:  "INSERT",
         schema: "public",
         table:  "notifications",
+        // SENGAJA tidak ada filter — saring client-side di bawah
       }, (payload) => {
         const n = payload.new;
         if (!n || n.store_id !== storeId) return; // filter client-side

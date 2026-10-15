@@ -29,9 +29,8 @@ export async function GET(request) {
   const { data: overdueOrders, error } = await supabaseAdmin
     .from("orders")
     .select("*")
-    .eq("status", "paid")
     .eq("shipping_deadline_notified", false)
-    .lte("paid_at", batasWaktu);
+    .or(`and(status.eq.paid,paid_at.lte.${batasWaktu}),and(status.eq.cod,created_at.lte.${batasWaktu})`);
 
   if (error) {
     console.error("Cron cek-pending error:", error.message);
@@ -61,7 +60,9 @@ export async function GET(request) {
         order_id: first.id,
         type: "order_pending",
         title: "Pesanan harus segera dikirim",
-        message: `Pesanan ${ringkasanProduk} dari ${first.buyer_name} sudah dibayar lebih dari 24 jam dan belum dikirim.`,
+        message: first.status === "cod"
+          ? `Pesanan COD ${ringkasanProduk} dari ${first.buyer_name} sudah lebih dari 24 jam dan belum dikirim.`
+          : `Pesanan ${ringkasanProduk} dari ${first.buyer_name} sudah dibayar lebih dari 24 jam dan belum dikirim.`,
       });
 
       await kirimPush(supabaseAdmin, first.store_id, {

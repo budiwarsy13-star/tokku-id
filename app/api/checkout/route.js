@@ -5,6 +5,7 @@ import { ambilOpsiOngkir } from "@/lib/rajaongkir-server";
 import { kurangiStokAtomic, kembalikanStok } from "@/lib/stock-server";
 import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
 import { hargaPromo } from "@/lib/promo";
+import { kirimPush } from "@/lib/push-server";
 
 // ======================================================================
 // SATU-SATUNYA JALAN buat bikin order + transaksi pembayaran.
@@ -53,10 +54,12 @@ export async function POST(request) {
       selectedCourier, // { name, service } — cost-nya diabaikan, dihitung ulang
       discountCode,
       refSource, // opsional, dari ?ref= di link toko
-      paymentMethod, // "online" | "cod" — dikirm frontend, divalidasi di bawah
+      paymentMethod, // "online" (default) | "cod"
       items, // [{ productId, variantName, quantity }]
     } = body;
 
+    // COD = METODE BAYAR doang. Order COD statusnya "cod" (bukan "paid") dan
+    // gak bikin transaksi Midtrans. Nilai selain "cod" dianggap online.
     const isCOD = paymentMethod === "cod";
 
     if (!storeId || !buyerName?.trim() || !buyerPhone?.trim() || !destinationId || !fullAddress?.trim() || !Array.isArray(items) || items.length === 0) {
@@ -67,6 +70,10 @@ export async function POST(request) {
     if (!store) return Response.json({ success: false, message: "Toko gak ditemukan." }, { status: 404 });
     if (!store.origin_id) {
       return Response.json({ success: false, message: "Toko ini belum atur alamat asal pengiriman." }, { status: 400 });
+    }
+    // COD harus diaktifkan seller (Pengaturan > Metode pembayaran). Default mati.
+    if (isCOD && !store.cod_enabled) {
+      return Response.json({ success: false, message: "Toko ini belum menerima pembayaran COD. Pilih pembayaran online ya." }, { status: 400 });
     }
 
     // 1. Ambil harga, stok, & berat ASLI dari database buat tiap item —
@@ -98,7 +105,9 @@ export async function POST(request) {
         namaLengkap = product.name;
       }
 
-      // Harga promo (kalau lagi aktif) dihitung di sini, pakai jam server.
+      // Harga promo (kalau lagi aktif) dihitung di sini, pakai jam server --
+      // bukan dari client, biar seller gak bisa dibohongin soal kapan promo
+      // berakhir. Hasil ini juga yang dipakai buat total & dikirim ke Midtrans.
       unitPrice = hargaPromo(unitPrice, product);
 
       const qty = Math.max(1, parseInt(item.quantity) || 1);
@@ -121,6 +130,10 @@ export async function POST(request) {
     //    Kalau opsi itu gak ketemu lagi (harga berubah/kurir gak tersedia), tolak.
     let shippingCost = 0;
     let shippingLabel = "";
+    // Kurir WAJIB dipilih: kalau dilewat, ongkir jadi 0 dan seller nombok.
+    if (!selectedCourier) {
+      return Response.json({ success: false, message: "Pilih kurir pengiriman dulu." }, { status: 400 });
+    }
     if (selectedCourier) {
       const opsiOngkir = await ambilOpsiOngkir(store.origin_id, String(destinationId), totalBerat);
       const cocok = opsiOngkir.find((o) => o.name === selectedCourier.name && o.service === selectedCourier.service);
@@ -147,6 +160,17 @@ export async function POST(request) {
     const refSourceFinal = String(refSource || "").toLowerCase().replace(/[^a-z0-9_-]/g, "").slice(0, 30) || null;
 
     const grandTotal = Math.max(subtotal + shippingCost - discountAmount, 0);
+
+    // Batas nilai COD (opsional): batas dari seller (stores.cod_max_total) dan/atau
+    // batas platform (env COD_MAX_TOTAL). Kalau dua-duanya ada, yang lebih kecil dipakai.
+    const batasValid = [Number(store.cod_max_total || 0), Number(process.env.COD_MAX_TOTAL || 0)].filter((n) => n > 0);
+    const batasCod = batasValid.length ? Math.min(...batasValid) : 0;
+    if (isCOD && batasCod > 0 && grandTotal > batasCod) {
+      return Response.json({
+        success: false,
+        message: `COD cuma tersedia sampai Rp${batasCod.toLocaleString("id-ID")}. Pilih pembayaran online ya.`,
+      }, { status: 400 });
+    }
 
     // 4. Kurangi stok ATOMIC per item. Kalau ada yang gagal di tengah jalan
     //    (race condition sama buyer lain), kembalikan yang udah kepotong lalu batalkan.
@@ -178,8 +202,9 @@ export async function POST(request) {
         buyer_phone: buyerPhone.trim(),
         quantity: item.quantity,
         total_price: rowTotal,
+        status: isCOD ? "cod" : "pending",
         payment_method: isCOD ? "cod" : "online",
-        status: isCOD ? "paid" : "pending",
+        buyer_email: buyerEmail?.trim() || null,
         destination_id: String(destinationId),
         destination_label: destinationLabel || "",
         full_address: fullAddress.trim(),
@@ -192,7 +217,7 @@ export async function POST(request) {
       };
     });
 
-    const { data: insertedRows, error: insertError } = await supabaseAdmin.from("orders").insert(rows).select("id");
+    const { error: insertError } = await supabaseAdmin.from("orders").insert(rows);
     if (insertError) {
       for (const item of stokYangUdahDikurangi) {
         await kembalikanStok(supabaseAdmin, item.productId, item.variantName, item.quantity);
@@ -201,40 +226,40 @@ export async function POST(request) {
       return Response.json({ success: false, message: "Gagal membuat pesanan, coba lagi." }, { status: 500 });
     }
     orderIdYangUdahDiinsert = midtransOrderId;
-    const firstOrderUUID = insertedRows?.[0]?.id; // UUID row pertama — untuk WA notify
 
     // 6. Notifikasi "order masuk" ke seller.
     const ringkasanProduk = itemsTervalidasi.length === 1
       ? itemsTervalidasi[0].name
       : `${itemsTervalidasi[0].name} + ${itemsTervalidasi.length - 1} produk lainnya`;
+
+    // COD: notif khusus ke bell seller (+ push), TANPA transaksi Midtrans.
+    // Seller tinggal kirim paketnya ke ekspedisi & isi nomor resi di dashboard.
+    if (isCOD) {
+      const nominal = `Rp${grandTotal.toLocaleString("id-ID")}`;
+      await supabaseAdmin.from("notifications").insert({
+        store_id: storeId,
+        type: "cod_order",
+        title: "Pesanan COD baru",
+        message: `${buyerName} memesan ${ringkasanProduk} (COD ${nominal}). Segera kirim & isi nomor resi. Pembayaran ditagih kurir ke pembeli.`,
+      });
+      try {
+        await kirimPush(supabaseAdmin, storeId, {
+          title: "Pesanan COD baru 🚚",
+          message: `${buyerName} · ${ringkasanProduk} · ${nominal}`,
+          url: "/dashboard/pesanan?tab=perlu_diproses",
+        });
+      } catch (e) {
+        console.error("Gagal kirim push COD:", e.message); // best-effort, jangan gagalin checkout
+      }
+      return Response.json({ success: true, cod: true, orderId: midtransOrderId, grandTotal });
+    }
+
     await supabaseAdmin.from("notifications").insert({
       store_id: storeId,
       type: "order_masuk",
       title: "Pesanan baru masuk",
-      message: `${buyerName} memesan ${ringkasanProduk}. ${isCOD ? "COD — langsung diproses." : "Menunggu pembayaran."}`,
+      message: `${buyerName} memesan ${ringkasanProduk}. Menunggu pembayaran.`,
     });
-
-    // 6b. WA Notification — fire & forget, gak boleh nge-block response ke buyer.
-    // Seller dapat WA "pesanan baru", buyer dapat WA konfirmasi pesanan.
-    if (firstOrderUUID) {
-      const baseUrl = process.env.NEXT_PUBLIC_BASE_URL;
-      fetch(`${baseUrl}/api/wa/notify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "order_masuk", orderId: firstOrderUUID }),
-      }).catch(() => {});
-      fetch(`${baseUrl}/api/wa/notify`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "order_created_buyer", orderId: firstOrderUUID }),
-      }).catch(() => {});
-    }
-
-    // 6c. COD: selesai di sini — gak perlu Midtrans sama sekali.
-    //     Status sudah "paid" sejak insert (buyer deal bayar ke kurir).
-    if (isCOD) {
-      return Response.json({ success: true, orderId: midtransOrderId, paymentMethod: "cod", grandTotal });
-    }
 
     // 7. Bikin transaksi Midtrans pakai grandTotal yang OTORITATIF dari server.
     const itemDetails = [

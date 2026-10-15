@@ -29,7 +29,7 @@ export default function YangPerluDilakukan({ store }) {
 
       setAngka({
         menunggu: hitungStatus("pending"),
-        perluDiproses: hitungStatus("paid"),
+        perluDiproses: hitungStatus("paid") + hitungStatus("cod"),
         sedangDikirim: hitungStatus("shipped"),
         perluReview: hitungStatus("perlu_review"),
         stokHabis,
