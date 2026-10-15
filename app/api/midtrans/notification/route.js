@@ -201,8 +201,9 @@ export async function POST(request) {
       }
 
       // Ambil kredensial tracking toko ini, terus kirim event Purchase server-side.
-      // Semua 4 kolom ini ada langsung di tabel `stores` (diisi seller lewat
-      // halaman Dashboard > Toko), BUKAN di tabel terpisah.
+      // ID publik (pixel / measurement ID) + plan ada di tabel `stores`, tapi TOKEN
+      // RAHASIA (meta_access_token, ga4_api_secret) ada di tabel `store_secrets` supaya
+      // gak ikut kebaca publik lewat halaman toko. JANGAN dibalikin ke `stores`.
       //
       // Pixel/CAPI itu fitur BERBAYAR (plan). Sebelum ini, kuncinya cuma ada
       // di copy marketing ("paid only") tapi di kode semua seller bisa
@@ -211,12 +212,17 @@ export async function POST(request) {
       // langsung).
       const { data: storeCreds } = await supabaseAdmin
         .from("stores")
-        .select("plan, plan_aktif_sampai, meta_pixel_id, meta_access_token, ga4_measurement_id, ga4_api_secret")
+        .select("plan, plan_aktif_sampai, meta_pixel_id, ga4_measurement_id")
         .eq("id", first.store_id)
         .maybeSingle();
 
       if (storeCreds && bolehPakaiFitur(storeCreds, FITUR_BERBAYAR.PIXEL_TRACKING)) {
-        await kirimPurchaseServerSide(storeCreds, updatedOrders, totalGabungan);
+        const { data: storeSecrets } = await supabaseAdmin
+          .from("store_secrets")
+          .select("meta_access_token, ga4_api_secret")
+          .eq("store_id", first.store_id)
+          .maybeSingle();
+        await kirimPurchaseServerSide({ ...storeCreds, ...(storeSecrets || {}) }, updatedOrders, totalGabungan);
       }
     }
 

@@ -3,7 +3,6 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
-import NotificationBell from "@/components/NotificationBell";
 import { Save, Bell, Store, Globe, Banknote } from "lucide-react";
 
 export default function PengaturanPage() {
@@ -65,7 +64,6 @@ export default function PengaturanPage() {
     <DashboardLayout store={store} activeMenu="/dashboard/pengaturan" headerTitle="Pengaturan">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-xl font-bold text-[#1C1C1A]">Pengaturan toko</h1>
-        <NotificationBell storeId={store.id} />
       </div>
 
       <form onSubmit={handleSave} className="space-y-5 max-w-2xl">

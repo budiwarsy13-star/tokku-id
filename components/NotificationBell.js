@@ -35,6 +35,8 @@ export default function NotificationBell({ storeId }) {
   const [notifs,  setNotifs]  = useState([]);
   const [loading, setLoading] = useState(true);
   const ref = useRef(null);
+  // ID unik per instance: dua bell di halaman yang sama gak lagi nabrak channel realtime yang sama.
+  const instanceId = useRef(Math.random().toString(36).slice(2, 8));
 
   useEffect(() => {
     if (!storeId) return;
@@ -54,7 +56,7 @@ export default function NotificationBell({ storeId }) {
     // yang di-set secara konsisten. Ini pattern yang sama dengan
     // unread badge yang sudah terbukti bekerja.
     const channel = supabase
-      .channel(`notif-bell-${storeId}-v2`)  // versi baru agar tidak konflik channel lama
+      .channel(`notif-bell-${storeId}-${instanceId.current}`)
       .on("postgres_changes", {
         event:  "INSERT",
         schema: "public",
