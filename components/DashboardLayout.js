@@ -5,7 +5,7 @@ import NotificationBell from "@/components/NotificationBell";
 import VerifiedBadge from "@/components/VerifiedBadge";
 import {
   LayoutDashboard, Package, ShoppingBag, Store, Bot,
-  LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles, Flame, MessageCircle
+  LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles, Flame, MessageCircle, Crown
 } from "lucide-react";
 
 const menuItems = [
@@ -21,6 +21,7 @@ const menuItems = [
   { icon: Bot,           label: "Chat Bot",       href: "/dashboard/chat-bot" },
   { icon: Sparkles,        label: "Insight AI",      href: "/dashboard/insight" },
   { icon: Palette,         label: "Tampilan",        href: "/dashboard/tampilan" },
+  { icon: Crown,           label: "Langganan",       href: "/dashboard/langganan" },
   { icon: Store,           label: "Pengaturan toko", href: "/dashboard/toko" },
 ];
 
