@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Loader2, Send, ShieldCheck, AlertTriangle, Check } from "lucide-react";
+import KunciFitur from "@/components/KunciFitur";
 
 const SEGMEN = [
   { key: "semua", judul: "Semua pembeli", desc: "Semua yang pernah bayar di tokomu" },
@@ -102,6 +103,11 @@ export default function BlastPage() {
           <div className="rounded-xl px-4 py-3 text-sm bg-[#FAEEDA] text-[#854F0B]">Layanan WA belum aktif di server (WA_API_KEY belum diisi).</div>
         )}
 
+        {info && !info.pro && (
+          <KunciFitur judul="WA Blast ke pembeli lama"
+            deskripsi="Kamu bisa melihat jumlah pembeli di tiap segmen di bawah, tapi mengirim blast khusus Paket Pro." />
+        )}
+
         <div className="bg-white rounded-xl border border-[#E5E2D9] p-5 space-y-3">
           <h2 className="font-bold text-[#1C1C1A]">1. Pilih penerima</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
@@ -144,7 +150,7 @@ export default function BlastPage() {
           {cooldown && (
             <p className="text-sm text-[#854F0B] bg-[#FAEEDA] rounded-lg px-3 py-2">Blast terakhir baru dikirim. Bisa kirim lagi mulai {tampilWaktu(cooldown)}.</p>
           )}
-          <button onClick={kirim} disabled={mengirim || !!cooldown || akanDikirim === 0 || !info?.waSiap}
+          <button onClick={kirim} disabled={mengirim || !!cooldown || akanDikirim === 0 || !info?.waSiap || !info?.pro}
             className="px-5 py-2.5 rounded-lg bg-[#D85A30] text-white text-sm font-medium hover:bg-[#B84A25] disabled:opacity-40 flex items-center gap-2">
             {mengirim ? <Loader2 size={15} className="animate-spin" /> : <Send size={15} />}
             Kirim ke {akanDikirim} pembeli

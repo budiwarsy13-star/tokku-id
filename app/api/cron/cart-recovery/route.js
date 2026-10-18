@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { isPro } from "@/lib/plans";
 
 // CART RECOVERY via WhatsApp (Fonnte).
 // Cari order `pending` yang umurnya 30 menit - 100 menit dan belum pernah dikirimi
@@ -51,7 +52,7 @@ export async function GET(request) {
 
   const { data: pendingOrders, error } = await supabaseAdmin
     .from("orders")
-    .select("*, stores(name, slug)")
+    .select("*, stores(name, slug, plan, plan_expires_at)")
     .eq("status", "pending")
     .is("cart_recovery_sent_at", null)
     .gte("created_at", batasBawah)
@@ -66,6 +67,7 @@ export async function GET(request) {
   // 1 transaksi = beberapa baris orders -> 1 pesan per midtrans_order_id.
   const grup = {};
   for (const o of pendingOrders || []) {
+    if (!isPro(o.stores)) continue; // Cart Recovery = fitur Pro
     const key = o.midtrans_order_id || o.id;
     (grup[key] ||= []).push(o);
   }

@@ -1,6 +1,11 @@
 // app/api/wa/notify/route.js
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+import { isPro, BATAS_FREE } from "@/lib/plans";
+import { pakaiKuota } from "@/lib/plan-server";
+
+const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
 const FONNTE_TOKEN = process.env.FONNTE_TOKEN;
 const FONNTE_URL = "https://api.fonnte.com/send";
@@ -23,7 +28,7 @@ export async function POST(req) {
 
   const { data: order } = await supabase
     .from("orders")
-    .select("*, stores(wa_number, wa_notif_enabled, name)")
+    .select("*, stores(wa_number, wa_notif_enabled, name, plan, plan_expires_at)")
     .eq("id", orderId)
     .single();
 
@@ -37,6 +42,9 @@ export async function POST(req) {
 
   // --- Notifikasi ke Seller ---
   if (type === "order_masuk" && store?.wa_notif_enabled && store?.wa_number) {
+    // Paket Gratis: kuota notifikasi WA ke seller per bulan (pesan masuk tetap muncul di dashboard & push).
+    const boleh = isPro(store) || (await pakaiKuota(supabaseAdmin, order.store_id, "notif_wa_seller", BATAS_FREE.notifWaSellerPerBulan));
+    if (!boleh) return NextResponse.json({ ok: true, dilewati: "kuota_wa_habis" });
     const msg =
       `🛍️ *Pesanan Baru Masuk!*\n\n` +
       `Kode pesanan: *${orderCode}*\n` +

@@ -4,6 +4,8 @@ import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import { promoAktif, hargaPromo, statusPromo } from "@/lib/promo";
+import { isPro, BATAS_FREE } from "@/lib/plans";
+import Link from "next/link";
 import { Loader2, Search, Flame, AlertTriangle, Check } from "lucide-react";
 
 function rupiah(n) {
@@ -103,6 +105,16 @@ export default function PromoPage() {
     if (tSelesai <= tMulai) return setPesan({ tipe: "err", teks: "Waktu selesai harus setelah waktu mulai." });
     if (tSelesai <= new Date()) return setPesan({ tipe: "err", teks: "Waktu selesai sudah lewat." });
 
+    if (!isPro(store)) {
+      const aktifLain = products.filter((p) => promoAktif(p) && !dipilih.has(p.id)).length;
+      if (dipilih.size + aktifLain > BATAS_FREE.produkPromoAktif) {
+        return setPesan({ tipe: "err", teks: `Paket Gratis dibatasi ${BATAS_FREE.produkPromoAktif} produk dengan promo aktif. Upgrade ke Pro untuk promo tanpa batas.` });
+      }
+      if (tMulai.getTime() > Date.now() + 10 * 60 * 1000) {
+        return setPesan({ tipe: "err", teks: "Promo terjadwal (mulai di waktu yang akan datang) khusus Paket Pro." });
+      }
+    }
+
     setMenyimpan(true);
     const { error } = await supabase.from("products")
       .update({ promo_percent: pct, promo_starts_at: tMulai.toISOString(), promo_ends_at: tSelesai.toISOString() })
@@ -134,6 +146,13 @@ export default function PromoPage() {
         {pesan && (
           <div className={`rounded-xl px-4 py-3 text-sm flex items-center gap-2 ${pesan.tipe === "ok" ? "bg-[#EAF3DE] text-[#3B6D11]" : "bg-[#FCEBEB] text-[#A32D2D]"}`}>
             {pesan.tipe === "ok" ? <Check size={16} /> : <AlertTriangle size={16} />} {pesan.teks}
+          </div>
+        )}
+
+        {!isPro(store) && (
+          <div className="rounded-xl px-4 py-3 text-sm bg-[#FAEEDA] text-[#854F0B]">
+            Paket Gratis: maksimal {BATAS_FREE.produkPromoAktif} produk dengan promo aktif, dan promo langsung berjalan (tidak bisa dijadwalkan).{" "}
+            <Link href="/dashboard/langganan" className="font-semibold underline">Upgrade ke Pro</Link> untuk promo tanpa batas + terjadwal.
           </div>
         )}
 

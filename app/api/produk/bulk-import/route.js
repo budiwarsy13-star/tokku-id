@@ -12,6 +12,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { cekRateLimit, ambilIp } from "@/lib/rate-limit-server";
+import { isPro } from "@/lib/plans";
 import { validasiBarisProduk, unduhDanUploadGambar } from "@/lib/bulk-import-server";
 
 const supabaseAdmin = createClient(
@@ -40,9 +41,12 @@ export async function POST(request) {
     // 2. Toko diambil dari user_id yang login, bukan dari body. Ini yang
     //    nutup celah "import ke toko orang lain".
     const { data: store } = await supabaseAdmin
-      .from("stores").select("id").eq("user_id", user.id).maybeSingle();
+      .from("stores").select("id, plan, plan_expires_at").eq("user_id", user.id).maybeSingle();
     if (!store) {
       return Response.json({ success: false, message: "Kamu belum punya toko." }, { status: 404 });
+    }
+    if (!isPro(store)) {
+      return Response.json({ success: false, message: "Import produk dari CSV khusus Paket Pro. Upgrade di menu Langganan." }, { status: 403 });
     }
 
     // 3. Rate limit per-user biar endpoint yang lumayan berat ini (fetch

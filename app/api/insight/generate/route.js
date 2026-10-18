@@ -10,6 +10,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { generateInsight } from "@/lib/insight-server";
+import { isPro } from "@/lib/plans";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -32,11 +33,14 @@ export async function POST(request) {
     // storeId SELALU dari akun yang login, bukan dari body — pola yang sama
     // kayak bulk-import, biar gak bisa generate/liat insight toko orang lain.
     const { data: store } = await supabaseAdmin
-      .from("stores").select("id").eq("user_id", userData.user.id).maybeSingle();
+      .from("stores").select("id, plan, plan_expires_at").eq("user_id", userData.user.id).maybeSingle();
     if (!store) return Response.json({ success: false, message: "Kamu belum punya toko." }, { status: 404 });
 
     const { periodType } = await request.json().catch(() => ({}));
     const tipe = periodType === "mingguan" ? "mingguan" : "harian";
+    if (tipe === "harian" && !isPro(store)) {
+      return Response.json({ success: false, message: "Insight harian khusus Paket Pro. Insight mingguan tetap gratis." }, { status: 403 });
+    }
 
     const { data: terakhir } = await supabaseAdmin
       .from("ai_insights")

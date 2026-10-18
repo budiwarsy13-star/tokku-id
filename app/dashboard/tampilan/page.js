@@ -4,6 +4,8 @@ import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import { DEFAULT_THEME, mergeTheme, FONTS } from "@/lib/theme";
 import { Check, Eye, Save, RotateCcw, ExternalLink } from "lucide-react";
+import KunciFitur from "@/components/KunciFitur";
+import { bisa } from "@/lib/plans";
 
 const HEADER_STYLES  = [
   { value: "banner",   label: "Banner Penuh",  desc: "Foto banner tampil besar di atas" },
@@ -34,7 +36,10 @@ export default function TampilanToko() {
   const [theme,   setTheme]   = useState(DEFAULT_THEME);
   const [saving,  setSaving]  = useState(false);
   const [saved,   setSaved]   = useState(false);
-  const [section, setSection] = useState("layout");
+  const [sectionDipilih, setSection] = useState("layout");
+  // Gratis: hanya Layout & Warna. Header, Tipografi, Produk = Pro (blok konten tidak dirender kalau terkunci).
+  const terkunci = !bisa(store, "tema_kustom") && ["header", "typography", "product"].includes(sectionDipilih);
+  const section = terkunci ? "__terkunci" : sectionDipilih;
 
   useEffect(() => {
     async function init() {
@@ -107,7 +112,7 @@ export default function TampilanToko() {
             {SECTIONS.map(s => (
               <button key={s.key} onClick={() => setSection(s.key)}
                 className={`flex-1 text-xs py-1.5 px-2 rounded-lg font-medium transition-colors whitespace-nowrap ${
-                  section === s.key ? "bg-[#1C1C1A] text-white" : "text-[#5B6472] hover:bg-[#F1EFE8]"
+                  sectionDipilih === s.key ? "bg-[#1C1C1A] text-white" : "text-[#5B6472] hover:bg-[#F1EFE8]"
                 }`}>
                 {s.label}
               </button>
@@ -117,6 +122,11 @@ export default function TampilanToko() {
           <div className="bg-white rounded-xl border border-[#E5E2D9] p-5 space-y-5">
 
             {/* ── LAYOUT ── */}
+            {terkunci && (
+              <KunciFitur judul="Kustomisasi tampilan penuh"
+                deskripsi="Header, tipografi, dan gaya produk bisa diubah sepenuhnya di paket Pro. Layout dan warna tetap gratis." />
+            )}
+
             {section === "layout" && (
               <>
                 <h3 className="font-bold text-[#1C1C1A]">Layout halaman</h3>

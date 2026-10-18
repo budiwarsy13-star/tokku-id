@@ -5,6 +5,7 @@
 
 import { createClient } from "@supabase/supabase-js";
 import { generateInsight } from "@/lib/insight-server";
+import { isPro } from "@/lib/plans";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -18,7 +19,10 @@ export async function GET(request) {
   }
 
   const { data: storeIdsWithProduct } = await supabaseAdmin.from("products").select("store_id");
-  const uniqueStoreIds = [...new Set((storeIdsWithProduct || []).map((p) => p.store_id))];
+  const semuaId = [...new Set((storeIdsWithProduct || []).map((p) => p.store_id))];
+  // Insight harian = fitur Pro: hanya toko dengan paket aktif.
+  const { data: tokoPlan } = await supabaseAdmin.from("stores").select("id, plan, plan_expires_at").in("id", semuaId);
+  const uniqueStoreIds = (tokoPlan || []).filter((t) => isPro(t)).map((t) => t.id);
 
   const hasil = { berhasil: 0, gagal: 0, detail: [] };
   for (const storeId of uniqueStoreIds) {

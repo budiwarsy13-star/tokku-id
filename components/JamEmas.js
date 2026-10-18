@@ -3,6 +3,8 @@
 import { useState, useEffect, useMemo } from "react";
 import { supabase } from "@/lib/supabase";
 import { Clock } from "lucide-react";
+import KunciFitur from "@/components/KunciFitur";
+import { bisa } from "@/lib/plans";
 
 const HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 const HARI_PANJANG = ["Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"];
@@ -46,7 +48,9 @@ export default function JamEmas({ store }) {
       setTrx(Array.from(peta.values()));
       setLoading(false);
     }
+    if (!bisa(store, "jam_emas")) return; // terkunci: tidak perlu ambil data
     muat();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.id]);
 
   const analisis = useMemo(() => {
@@ -70,6 +74,13 @@ export default function JamEmas({ store }) {
     return `rgba(216, 90, 48, ${a.toFixed(2)})`;
   };
   const sedikit = analisis.total < MIN_TRANSAKSI;
+
+  if (!bisa(store, "jam_emas")) {
+    return (
+      <KunciFitur judul="Jam emas jualan"
+        deskripsi="Ketahui jam dan hari pembeli paling sering bayar, supaya promo & posting konten tepat waktu." />
+    );
+  }
 
   return (
     <div className="bg-white rounded-xl border border-[#E5E2D9] p-5">

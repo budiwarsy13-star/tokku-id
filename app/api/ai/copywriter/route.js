@@ -1,6 +1,8 @@
 // app/api/ai/copywriter/route.js
 import { createClient } from "@supabase/supabase-js";
 import { cekRateLimit } from "@/lib/rate-limit-server";
+import { isPro, BATAS_FREE } from "@/lib/plans";
+import { pakaiKuota } from "@/lib/plan-server";
 import { generateCopywriting } from "@/lib/copywriter-server";
 
 const supabaseAdmin = createClient(
@@ -31,6 +33,15 @@ export async function POST(request) {
     const { name, category, notes, imageUrl } = await request.json();
     if (!name || !name.trim()) {
       return Response.json({ success: false, message: "Nama produk wajib diisi dulu sebelum generate." }, { status: 400 });
+    }
+
+    // Paket Gratis: kuota generate per bulan (dipakai SETELAH validasi input, biar request ngawur gak makan jatah).
+    const { data: tokoUser } = await supabaseAdmin.from("stores").select("id, plan, plan_expires_at").eq("user_id", userData.user.id).maybeSingle();
+    if (tokoUser && !isPro(tokoUser)) {
+      const boleh = await pakaiKuota(supabaseAdmin, tokoUser.id, "ai_copywriting", BATAS_FREE.aiCopywritingPerBulan);
+      if (!boleh) {
+        return Response.json({ success: false, message: `Jatah AI copywriter Paket Gratis (${BATAS_FREE.aiCopywritingPerBulan}x/bulan) sudah habis. Upgrade ke Pro untuk lebih banyak.` }, { status: 403 });
+      }
     }
 
     const hasil = await generateCopywriting({

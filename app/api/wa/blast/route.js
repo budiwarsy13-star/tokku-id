@@ -6,17 +6,9 @@
 // - hanya pembeli yang PERNAH BAYAR di toko itu; yang sudah klik "berhenti" dikecualikan
 // - maks 100 penerima per blast, 1 blast per 24 jam per toko
 // - jeda acak 15-40 detik antar pesan (diatur Fonnte), tiap pesan ada link berhenti
-//
-// Cooldown 24 jam di-klaim pakai UPDATE ... WHERE wa_last_blast_at < cutoff (compare-
-// and-swap atomik di level row Postgres), BUKAN "SELECT blast terakhir lalu INSERT
-// terpisah". Dengan cara lama itu, dua request "send" yang nyaris barengan bisa
-// dua-duanya lolos cek cooldown sebelum salah satu sempat nyatet -> kirim dobel.
-// Compare-and-swap ini jadiin klaim slotnya race-safe: cuma 1 request yang bisa
-// "menang" UPDATE-nya, siapapun yang kalah bakal lihat wa_last_blast_at udah
-// ke-update dan gagal di kondisi WHERE-nya.
 import { createClient } from "@supabase/supabase-js";
+import { isPro } from "@/lib/plans";
 import { normalisasiTelepon, teleponValid, buatSigOptout, bersihkanNama, susunPesan, kirimFonnte } from "@/lib/wa-server";
-import { bolehPakaiFitur, FITUR_BERBAYAR } from "@/lib/plan";
 
 const supabaseAdmin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE_KEY);
 
@@ -66,19 +58,15 @@ export async function POST(request) {
     if (userError || !userData?.user) return Response.json({ success: false, message: "Sesi login gak valid." }, { status: 401 });
 
     // storeId SELALU dari akun yang login, bukan dari body.
-    const { data: store } = await supabaseAdmin.from("stores")
-      .select("id, name, slug, wa_last_blast_at, plan, plan_aktif_sampai").eq("user_id", userData.user.id).maybeSingle();
+    const { data: store } = await supabaseAdmin.from("stores").select("id, name, slug, plan, plan_expires_at").eq("user_id", userData.user.id).maybeSingle();
     if (!store) return Response.json({ success: false, message: "Kamu belum punya toko." }, { status: 404 });
-
-    // WA Blast fitur berbayar. "preview" tetap kebuka buat semua (biar
-    // seller gratis lihat ada berapa pelanggan yang bisa di-blast -- teaser
-    // buat upgrade), tapi "send" yang beneran ngirim WA dikunci di sini.
-    const waBlastBoleh = bolehPakaiFitur(store, FITUR_BERBAYAR.WA_BLAST);
 
     const body = await request.json().catch(() => ({}));
     const { pelanggan, jumlahBerhenti } = await ambilPelanggan(store.id);
 
-    const sisaMs = COOLDOWN_MS - (Date.now() - new Date(store.wa_last_blast_at).getTime());
+    const { data: terakhir } = await supabaseAdmin.from("wa_blasts").select("created_at")
+      .eq("store_id", store.id).order("created_at", { ascending: false }).limit(1).maybeSingle();
+    const sisaMs = terakhir ? COOLDOWN_MS - (Date.now() - new Date(terakhir.created_at).getTime()) : 0;
     const bisaKirimLagiPada = sisaMs > 0 ? new Date(Date.now() + sisaMs).toISOString() : null;
 
     if (body.action === "preview") {
@@ -87,61 +75,36 @@ export async function POST(request) {
         jumlah: Object.fromEntries(SEGMEN.map((s) => [s, filterSegmen(pelanggan, s).length])),
         maksPerBlast: MAX_PER_BLAST, jumlahBerhenti, bisaKirimLagiPada,
         waSiap: !!process.env.WA_API_KEY,
-        waBlastBoleh,
+        pro: isPro(store),
       });
     }
 
     if (body.action !== "send") return Response.json({ success: false, message: "Aksi gak dikenal." }, { status: 400 });
 
-    if (!waBlastBoleh) {
-      return Response.json({ success: false, message: "WA Blast itu fitur berbayar. Upgrade paket kamu buat kirim promo ke pelanggan lama.", perluUpgrade: true }, { status: 402 });
-    }
-
+    if (!isPro(store)) return Response.json({ success: false, message: "WA Blast khusus Paket Pro. Upgrade di menu Langganan." }, { status: 403 });
     if (!process.env.WA_API_KEY) return Response.json({ success: false, message: "Layanan WA belum dikonfigurasi." }, { status: 500 });
     if (!SEGMEN.includes(body.segment)) return Response.json({ success: false, message: "Segmen gak valid." }, { status: 400 });
     const template = String(body.message || "").trim();
     if (template.length < 15 || template.length > 700) {
       return Response.json({ success: false, message: "Pesan harus 15–700 karakter." }, { status: 400 });
     }
+    if (bisaKirimLagiPada) {
+      return Response.json({ success: false, message: "Blast dibatasi 1x per 24 jam per toko biar nomor pengirim aman.", bisaKirimLagiPada }, { status: 429 });
+    }
 
     const penerima = filterSegmen(pelanggan, body.segment).slice(0, MAX_PER_BLAST);
     if (penerima.length === 0) return Response.json({ success: false, message: "Belum ada penerima di segmen ini." }, { status: 400 });
 
-    // Klaim cooldown 24 jam secara ATOMIK: UPDATE cuma berhasil kalau
-    // wa_last_blast_at masih di luar window cooldown PADA SAAT row di-lock
-    // oleh Postgres, jadi gak ada celah antara "cek" dan "catat" kayak sebelumnya.
-    const now = new Date();
-    const cutoff = new Date(now.getTime() - COOLDOWN_MS).toISOString();
-    const { data: klaim, error: errKlaim } = await supabaseAdmin.from("stores")
-      .update({ wa_last_blast_at: now.toISOString() })
-      .eq("id", store.id)
-      .lt("wa_last_blast_at", cutoff)
-      .select("id")
-      .maybeSingle();
-    if (errKlaim) return Response.json({ success: false, message: "Gagal klaim slot blast: " + errKlaim.message }, { status: 500 });
-    if (!klaim) {
-      // Kalah race (atau emang masih cooldown) -> gak boleh lanjut.
-      return Response.json({ success: false, message: "Blast dibatasi 1x per 24 jam per toko biar nomor pengirim aman.", bisaKirimLagiPada }, { status: 429 });
-    }
-
-    // Catatan histori blast (segmen, pesan, jumlah penerima) -- terpisah dari
-    // klaim cooldown di atas, jadi gak ikut nambah risiko race lagi.
+    // Klaim slot 24 jam dulu; kalau kirim gagal, dihapus lagi.
     const { data: catatan, error: errCatat } = await supabaseAdmin.from("wa_blasts")
       .insert({ store_id: store.id, segment: body.segment, message: template, total_recipients: penerima.length })
       .select("id").single();
-    if (errCatat) {
-      await supabaseAdmin.from("stores").update({ wa_last_blast_at: store.wa_last_blast_at }).eq("id", store.id);
-      return Response.json({ success: false, message: "Gagal mencatat blast: " + errCatat.message }, { status: 500 });
-    }
+    if (errCatat) return Response.json({ success: false, message: "Gagal mencatat blast: " + errCatat.message }, { status: 500 });
 
     const targets = penerima.map((p) => `${p.phone}|${p.nama}|${store.slug}/${p.phone}/${buatSigOptout(store.id, p.phone)}`);
     const hasil = await kirimFonnte({ targets, message: susunPesan(template, store) });
 
     if (!hasil.ok) {
-      // Kirim gagal beneran (bukan masalah cooldown) -> jangan hukum seller
-      // nunggu 24 jam buat nyoba lagi. Balikin wa_last_blast_at ke nilai lama
-      // dan hapus catatan histori yang kadung dibuat.
-      await supabaseAdmin.from("stores").update({ wa_last_blast_at: store.wa_last_blast_at }).eq("id", store.id);
       await supabaseAdmin.from("wa_blasts").delete().eq("id", catatan.id);
       console.error("WA blast gagal:", hasil.detail);
       return Response.json({ success: false, message: "Fonnte menolak: " + (hasil.detail || "cek status device & kuota") }, { status: 502 });

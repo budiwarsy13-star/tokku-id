@@ -4,6 +4,8 @@ import { useState, useEffect, useRef } from "react";
 import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Eye, Search, Upload, Palette } from "lucide-react";
+import KunciFitur from "@/components/KunciFitur";
+import { bisa } from "@/lib/plans";
 
 
 export default function PengaturanToko() {
@@ -407,7 +409,11 @@ export default function PengaturanToko() {
           </div>
         )}
         {/* TAB: TRACKING */}
-        {activeTab === "tracking" && (
+        {activeTab === "tracking" && !bisa(store, "pixel_capi") && (
+          <KunciFitur judul="Meta Pixel, GA4 & server-side tracking"
+            deskripsi="Pasang Pixel dan GA4 di toko, plus kirim event Purchase langsung dari server supaya iklan lebih akurat. Pengaturan yang sudah kamu isi tetap tersimpan." />
+        )}
+        {activeTab === "tracking" && bisa(store, "pixel_capi") && (
           <div className="space-y-4">
             <div className="bg-[#FAECE7] text-[#712B13] text-sm px-4 py-3 rounded-lg">
               Data ini dipakai buat ngukur seberapa efektif iklan kamu (Meta/Google Ads) dan optimasi

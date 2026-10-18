@@ -7,7 +7,8 @@ import crypto from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import { kirimPush } from "@/lib/push-server";
 import { kembalikanStok } from "@/lib/stock-server";
-import { bolehPakaiFitur, FITUR_BERBAYAR } from "@/lib/plan";
+import { aktifkanPaket, tandaiTagihanGagal } from "@/lib/plan-server";
+import { isPro } from "@/lib/plans";
 
 // Service role, BUKAN client biasa -- ini request server-to-server dari
 // Midtrans (bukan dari browser), dan update ke tabel orders harus bisa
@@ -98,6 +99,16 @@ export async function POST(request) {
       .digest("hex");
     if (signature_key !== expectedSignature) {
       return Response.json({ error: "Invalid signature" }, { status: 403 });
+    }
+
+    // Pembayaran LANGGANAN tokku (bukan pesanan buyer): order_id berawalan "SUB-".
+    if (String(order_id).startsWith("SUB-")) {
+      if (transaction_status === "settlement" || (transaction_status === "capture" && fraud_status === "accept")) {
+        await aktifkanPaket(supabaseAdmin, order_id, gross_amount);
+      } else if (["deny", "cancel", "expire"].includes(transaction_status)) {
+        await tandaiTagihanGagal(supabaseAdmin, order_id, transaction_status === "expire" ? "expired" : "failed");
+      }
+      return Response.json({ ok: true });
     }
 
     let newStatus = null;
@@ -201,28 +212,23 @@ export async function POST(request) {
       }
 
       // Ambil kredensial tracking toko ini, terus kirim event Purchase server-side.
-      // ID publik (pixel / measurement ID) + plan ada di tabel `stores`, tapi TOKEN
-      // RAHASIA (meta_access_token, ga4_api_secret) ada di tabel `store_secrets` supaya
-      // gak ikut kebaca publik lewat halaman toko. JANGAN dibalikin ke `stores`.
-      //
-      // Pixel/CAPI itu fitur BERBAYAR (plan). Sebelum ini, kuncinya cuma ada
-      // di copy marketing ("paid only") tapi di kode semua seller bisa
-      // pakai -- sekarang beneran dikunci di sini, di server, bukan cuma di
-      // UI dashboard (yang bisa dilewatin kalau seller manggil API-nya
-      // langsung).
-      const { data: storeCreds } = await supabaseAdmin
+      // ID publik (pixel / measurement ID) ada di tabel `stores`, tapi TOKEN RAHASIA
+      // (meta_access_token, ga4_api_secret) sengaja dipisah ke tabel `store_secrets`
+      // supaya gak ikut kebaca publik lewat halaman toko. JANGAN dibalikin ke `stores`.
+      const { data: storeIds } = await supabaseAdmin
         .from("stores")
-        .select("plan, plan_aktif_sampai, meta_pixel_id, ga4_measurement_id")
+        .select("meta_pixel_id, ga4_measurement_id, plan, plan_expires_at")
         .eq("id", first.store_id)
         .maybeSingle();
+      const { data: storeSecrets } = await supabaseAdmin
+        .from("store_secrets")
+        .select("meta_access_token, ga4_api_secret")
+        .eq("store_id", first.store_id)
+        .maybeSingle();
 
-      if (storeCreds && bolehPakaiFitur(storeCreds, FITUR_BERBAYAR.PIXEL_TRACKING)) {
-        const { data: storeSecrets } = await supabaseAdmin
-          .from("store_secrets")
-          .select("meta_access_token, ga4_api_secret")
-          .eq("store_id", first.store_id)
-          .maybeSingle();
-        await kirimPurchaseServerSide({ ...storeCreds, ...(storeSecrets || {}) }, updatedOrders, totalGabungan);
+      // Tracking server-side (CAPI/GA4) = fitur Pro.
+      if (storeIds && isPro(storeIds)) {
+        await kirimPurchaseServerSide({ ...storeIds, ...(storeSecrets || {}) }, updatedOrders, totalGabungan);
       }
     }
 

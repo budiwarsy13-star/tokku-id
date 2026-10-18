@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import { Link2, Copy, Check, Megaphone } from "lucide-react";
-import { hitungSebagaiPenjualan } from "@/lib/order-status";
+import KunciFitur from "@/components/KunciFitur";
+import { bisa } from "@/lib/plans";
 
 const PRESET = ["igstory", "igbio", "wa", "tiktok", "fb", "shopee"];
 const HARI = 30;
@@ -25,7 +26,7 @@ export default function UtmBreakdown({ store }) {
       const sejak = new Date(Date.now() - HARI * 24 * 60 * 60 * 1000).toISOString();
       const [ordersRes, eventsRes] = await Promise.all([
         supabase.from("orders")
-          .select("id, midtrans_order_id, total_price, status, ref_source, payment_method, cod_paid_at")
+          .select("id, midtrans_order_id, total_price, status, ref_source")
           .eq("store_id", store.id).gte("created_at", sejak),
         supabase.from("store_events")
           .select("ref_source")
@@ -46,7 +47,7 @@ export default function UtmBreakdown({ store }) {
         const item = ambil(k);
         const trx = o.midtrans_order_id || o.id;
         item.pesanan.add(trx);
-        if (hitungSebagaiPenjualan(o)) {
+        if (o.status !== "pending") {
           item.dibayar.add(trx);
           item.omzet += Number(o.total_price);
         }
@@ -58,7 +59,9 @@ export default function UtmBreakdown({ store }) {
       setRows(hasil);
       setLoading(false);
     }
+    if (!bisa(store, "utm")) return; // terkunci: tidak perlu ambil data
     fetchData();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [store.id]);
 
   async function salin() {
@@ -72,6 +75,13 @@ export default function UtmBreakdown({ store }) {
   }
 
   const maxPesanan = Math.max(...rows.map((r) => r.pesanan), 1);
+
+  if (!bisa(store, "utm")) {
+    return (
+      <KunciFitur className="mb-6" judul="Pesanan dari sumber mana"
+        deskripsi="Lihat berapa pesanan & omzet dari tiap sumber (IG story, bio, WA, TikTok). Datanya tetap direkam sekarang, jadi riwayatnya langsung muncul begitu kamu upgrade." />
+    );
+  }
 
   return (
     <div className="bg-white rounded-xl border border-[#E5E2D9] p-6 mb-6">

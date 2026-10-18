@@ -3,8 +3,9 @@ import { useState, useEffect } from "react";
 import { supabase } from "@/lib/supabase";
 import NotificationBell from "@/components/NotificationBell";
 import VerifiedBadge from "@/components/VerifiedBadge";
+import PlanBadge from "@/components/PlanBadge";
 import {
-  LayoutDashboard, Package, ShoppingBag, Store, Bot,
+  LayoutDashboard, Package, ShoppingBag, Store,
   LogOut, Tag, Menu, X, Palette, Boxes, BarChart3, Users, Sparkles, Flame, MessageCircle, Crown
 } from "lucide-react";
 
@@ -18,10 +19,9 @@ const menuItems = [
   { icon: BarChart3,       label: "Laporan",         href: "/dashboard/laporan" },
   { icon: Users,           label: "Pelanggan",       href: "/dashboard/pelanggan" },
   { icon: MessageCircle,   label: "WA Blast",        href: "/dashboard/blast" },
-  { icon: Bot,           label: "Chat Bot",       href: "/dashboard/chat-bot" },
+  { icon: Crown,           label: "Langganan",       href: "/dashboard/langganan" },
   { icon: Sparkles,        label: "Insight AI",      href: "/dashboard/insight" },
   { icon: Palette,         label: "Tampilan",        href: "/dashboard/tampilan" },
-  { icon: Crown,           label: "Langganan",       href: "/dashboard/langganan" },
   { icon: Store,           label: "Pengaturan toko", href: "/dashboard/toko" },
 ];
 
@@ -118,6 +118,7 @@ export default function DashboardLayout({ store, activeMenu, children, headerTit
                 <div className="flex items-center gap-2 min-w-0">
                   <h1 className="font-bold text-[#1C1C1A] truncate">{store?.name}</h1>
                   {store?.is_verified && <VerifiedBadge size="sm" className="flex-shrink-0" />}
+                  <PlanBadge store={store} />
                 </div>
               </div>
             )}

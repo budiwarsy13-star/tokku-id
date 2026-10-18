@@ -5,6 +5,7 @@ import { supabase } from "@/lib/supabase";
 import DashboardLayout from "@/components/DashboardLayout";
 import LineChartSVG from "@/components/LineChartSVG";
 import JamEmas from "@/components/JamEmas";
+import { bisa } from "@/lib/plans";
 
 const PERIODE = [
   { key: "7hari", label: "7 hari terakhir", hari: 7 },
@@ -107,7 +108,10 @@ export default function LaporanPage() {
       headerRight={
         <select value={periode} onChange={(e) => setPeriode(e.target.value)}
           className="text-sm border border-[#E5E2D9] rounded-lg px-3 py-2 bg-white focus:outline-none focus:border-[#D85A30]">
-          {PERIODE.map((p) => <option key={p.key} value={p.key}>{p.label}</option>)}
+          {PERIODE.map((p) => {
+            const terkunci = p.key === "90hari" && !bisa(store, "laporan_90_hari");
+            return <option key={p.key} value={p.key} disabled={terkunci}>{p.label}{terkunci ? " (Pro)" : ""}</option>;
+          })}
         </select>
       }>
       <div className="max-w-4xl space-y-6">

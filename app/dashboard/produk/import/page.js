@@ -6,6 +6,8 @@ import { supabase } from "@/lib/supabase";
 import { validasiBarisProduk } from "@/lib/bulk-import-server";
 import DashboardLayout from "@/components/DashboardLayout";
 import { Upload, Download, CheckCircle2, XCircle, AlertTriangle, Loader2 } from "lucide-react";
+import KunciFitur from "@/components/KunciFitur";
+import { bisa } from "@/lib/plans";
 
 const BATCH_SIZE = 25; // harus sama kayak MAX_ROWS_PER_REQUEST di route.js
 
@@ -109,6 +111,15 @@ export default function ImportProduk() {
   const errorCount = rows.length - validCount;
   const successCount = finalResults?.filter((r) => r.success).length || 0;
   const failCount = finalResults ? finalResults.length - successCount : 0;
+
+  if (store && !bisa(store, "bulk_import")) {
+    return (
+      <DashboardLayout store={store} activeMenu="/dashboard/produk" headerTitle="Import Produk dari CSV">
+        <KunciFitur className="max-w-xl" judul="Import produk dari CSV"
+          deskripsi="Masukkan puluhan atau ratusan produk sekaligus dari file CSV. Di paket Gratis, tambahkan produk satu per satu (maks. 30 produk)." />
+      </DashboardLayout>
+    );
+  }
 
   return (
     <DashboardLayout store={store} activeMenu="/dashboard/produk" headerTitle="Import Produk dari CSV">

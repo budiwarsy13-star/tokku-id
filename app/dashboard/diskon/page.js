@@ -38,7 +38,8 @@ export default function DiskonPage() {
   }
 
   async function toggleAktif(code) {
-    await supabase.from("discount_codes").update({ is_active: !code.is_active }).eq("id", code.id);
+    const { error } = await supabase.from("discount_codes").update({ is_active: !code.is_active }).eq("id", code.id);
+    if (error) alert(error.message);
     fetchCodes(store.id);
   }
 
