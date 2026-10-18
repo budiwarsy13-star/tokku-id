@@ -367,11 +367,11 @@ export default function PesananPage() {
                 </button>
               ))}
             </div>
-            <div className="relative">
+            <div className="relative w-full sm:w-auto">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B8D85]" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cari pembeli / produk..."
-                className="pl-8 pr-3 py-1.5 text-sm border border-[#E5E2D9] rounded-lg focus:outline-none focus:border-[#D85A30] w-56" />
+                className="pl-8 pr-3 py-1.5 text-sm border border-[#E5E2D9] rounded-lg focus:outline-none focus:border-[#D85A30] w-full sm:w-56" />
             </div>
           </div>
 
@@ -380,7 +380,10 @@ export default function PesananPage() {
               {orders.length === 0 ? "Belum ada pesanan masuk." : "Gak ada pesanan yang cocok."}
             </p>
           ) : (
-            <table className="w-full text-sm">
+            <>
+              {/* Desktop table — hidden di mobile */}
+              <div className="hidden sm:block overflow-x-auto">
+              <table className="w-full text-sm">
               <thead className="bg-[#F1EFE8] text-[#5B6472] text-left">
                 <tr>
                   <th className="px-4 py-3 font-medium">Produk</th>
@@ -503,6 +506,122 @@ export default function PesananPage() {
                 })}
               </tbody>
             </table>
+            </div>
+
+            {/* Mobile cards — hidden di desktop */}
+            <div className="sm:hidden divide-y divide-[#F1EFE8]">
+              {filteredOrders.map((o) => {
+                const batasKirim = hitungBatasKirim(o);
+                const unread     = unreadCounts[o.id] || 0;
+                return (
+                  <div key={o.id} className="p-4 space-y-3">
+
+                    {/* Produk + Status select */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-semibold text-[#1C1C1A] line-clamp-2">{o.product_name}</p>
+                        <button onClick={() => navigator.clipboard.writeText(o.midtrans_order_id)}
+                          title="Klik buat copy Order ID"
+                          className="text-xs text-[#8B8D85] font-mono hover:text-[#D85A30] hover:underline block truncate max-w-full">
+                          {o.midtrans_order_id}
+                        </button>
+                      </div>
+                      <div className="flex-shrink-0 text-right">
+                        {isCod(o) ? (
+                          <select
+                            value={o.status}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              if (v === "shipped") setOrderUntukResi(o);
+                              else if (v === "selesai") aksiCod(o, "lunas");
+                              else if (v === "gagal") aksiCod(o, "batal");
+                            }}
+                            disabled={o.status === "selesai" || o.status === "gagal"}
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
+                          >
+                            {o.status === "cod" && <option value="cod">COD · Perlu dikirim</option>}
+                            <option value="shipped">Dikirim (belum dibayar)</option>
+                            {o.status === "shipped" && <option value="selesai">Selesai (COD lunas)</option>}
+                            {o.status === "selesai" && <option value="selesai">Selesai</option>}
+                            {o.status === "gagal"
+                              ? <option value="gagal">Dibatalkan</option>
+                              : <option value="gagal">{o.status === "shipped" ? "COD ditolak / gagal" : "Batalkan pesanan"}</option>}
+                          </select>
+                        ) : (
+                          <select
+                            value={o.status}
+                            onChange={(e) => {
+                              if (e.target.value === "shipped") setOrderUntukResi(o);
+                              else updateStatus(o.id, e.target.value);
+                            }}
+                            disabled={o.status === "gagal"}
+                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
+                          >
+                            <option value="pending">Menunggu</option>
+                            <option value="paid">Dibayar</option>
+                            <option value="shipped">Dikirim</option>
+                            <option value="selesai">Selesai</option>
+                            {o.status === "gagal" && <option value="gagal">Dibatalkan</option>}
+                          </select>
+                        )}
+                        {o.waybill_number && (
+                          <button onClick={() => setOrderUntukResi(o)}
+                            className="block text-[11px] text-[#8B8D85] font-mono mt-1 hover:text-[#D85A30] hover:underline">
+                            Resi: {o.waybill_number}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* COD badge */}
+                    {isCod(o) && (
+                      <div className="flex items-start gap-1.5 text-[11px] leading-snug text-[#B8600B] bg-[#FCEFE3] rounded-md px-2 py-1.5">
+                        <Banknote size={13} className="mt-px flex-shrink-0" />
+                        <span>
+                          <strong>COD</strong>{" "}
+                          {o.status === "cod" && `Belum dikirim · tagih ${rupiahTotal(o)} lewat kurir COD.`}
+                          {o.status === "shipped" && !o.cod_paid_at && `Belum dibayar · menunggu kurir menyetor ${rupiahTotal(o)}.`}
+                          {o.status === "selesai" && o.cod_paid_at && `Lunas ${new Date(o.cod_paid_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })} (${o.cod_paid_source === "courier_webhook" ? "dari ekspedisi" : "konfirmasi seller"}).`}
+                          {o.status === "gagal" && "Dibatalkan / ditolak pembeli."}
+                        </span>
+                      </div>
+                    )}
+
+                    {/* Info pembeli */}
+                    <div className="bg-[#FAFAF7] rounded-lg p-3 space-y-0.5">
+                      <p className="text-sm font-medium text-[#1C1C1A]">{o.buyer_name}</p>
+                      <p className="text-xs text-[#8B8D85]">{o.buyer_phone}</p>
+                      <p className="text-xs text-[#8B8D85]">{o.full_address}, {o.destination_label}</p>
+                    </div>
+
+                    {/* Qty · total · batas kirim · chat */}
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-sm text-[#5B6472]">{o.quantity}x</span>
+                        <span className="text-sm font-semibold text-[#1C1C1A]">Rp{Number(o.total_price).toLocaleString("id-ID")}</span>
+                        {batasKirim && (
+                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${batasKirim.color}`}>
+                            {batasKirim.label}
+                          </span>
+                        )}
+                      </div>
+                      <button onClick={() => bukaChat(o)}
+                        className="relative p-2 rounded-lg hover:bg-[#EDE9FE] transition-colors flex-shrink-0"
+                        title="Buka chat dengan pembeli">
+                        <MessageCircle size={18} className={unread > 0 ? "text-[#7C3AED]" : "text-[#C4C2BA]"} strokeWidth={1.75} />
+                        {unread > 0 && (
+                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-[#7C3AED] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
+                            {unread}
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                  </div>
+                );
+              })}
+            </div>
+            </>
           )}
         </div>
       </div>

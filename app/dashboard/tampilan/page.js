@@ -103,9 +103,9 @@ export default function TampilanToko() {
     <DashboardLayout store={store} activeMenu="/dashboard/tampilan" headerTitle="Kustomisasi Tampilan Toko">
       <link rel="stylesheet" href={fontImport} />
 
-      <div className="flex gap-6 items-start">
+      <div className="flex flex-col lg:flex-row gap-6 items-start">
         {/* ── LEFT: Editor Panel ── */}
-        <div className="w-80 flex-shrink-0 space-y-3">
+        <div className="w-full lg:w-80 flex-shrink-0 space-y-3">
 
           {/* Section tabs */}
           <div className="bg-white rounded-xl border border-[#E5E2D9] p-1.5 flex flex-wrap gap-1">
