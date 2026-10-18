@@ -1,9 +1,13 @@
-import { Plus_Jakarta_Sans } from "next/font/google";
+import localFont from "next/font/local";
 
-const jakarta = Plus_Jakarta_Sans({
+// Font di-host sendiri (bukan next/font/google): build tidak perlu mengunduh apa pun dari
+// Google Fonts, jadi tidak bisa gagal gara-gara jaringan/Turbopack saat deploy.
+// Plus Jakarta Sans (OFL-1.1), varian variable, subset latin, bobot 200-800.
+const jakarta = localFont({
+  src: "./fonts/PlusJakartaSans-latin-variable.woff2",
   variable: "--font-baloo",
-  subsets: ["latin"],
-  weight: ["400", "500", "600", "700", "800"],
+  weight: "200 800",
+  display: "swap",
 });
 import "./globals.css";
 
