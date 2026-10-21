@@ -10,7 +10,7 @@ import PromoCarousel from "@/components/PromoCarousel";
 import { hargaPromo, promoAktif, setOffsetWaktu } from "@/lib/promo";
 import { FlashSaleBanner, FlashSaleStrip, ChipCountdown, GRADIEN_FLASH } from "@/components/FlashSale";
 import { mergeTheme, HEADER_HEIGHTS, GRID_COLS } from "@/lib/theme";
-import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2, ShieldCheck, Zap, Sparkles, ChevronLeft, ChevronRight, Play } from "lucide-react";
+import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2, ShieldCheck, Zap, Sparkles, ChevronLeft, ChevronRight, Play, Share2, Check } from "lucide-react";
 
 const TITLE_SIZE_BANNER  = { sm: 20, md: 26, lg: 34, xl: 44 };
 const TITLE_SIZE_INLINE  = { sm: 18, md: 22, lg: 28, xl: 36 };
@@ -46,9 +46,51 @@ export default function TokoPublik() {
   const [cart, setCart] = useState([]);
   const [cartOpen, setCartOpen] = useState(false);
   const [checkoutOpen, setCheckoutOpen] = useState(false);
+  const [toast, setToast] = useState(null); // { msg, icon }
 
   function refreshCart() {
     setCart(getCart(slug));
+  }
+
+  // Buka modal produk + update URL → ?p={id}
+  function bukaModal(produk) {
+    setSelectedProduct(produk);
+    const url = new URL(window.location.href);
+    if (produk) {
+      url.searchParams.set("p", produk.id);
+    } else {
+      url.searchParams.delete("p");
+    }
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  // Share link produk (include ref affiliate kalau aktif)
+  function shareProduct(produk) {
+    const base = `${window.location.origin}/${slug}?p=${produk.id}`;
+    const ref = getRefAktif();
+    const shareUrl = ref ? `${base}&ref=${ref}` : base;
+
+    if (navigator.share) {
+      navigator.share({ title: produk.name, url: shareUrl }).catch(() => {});
+    } else {
+      navigator.clipboard.writeText(shareUrl)
+        .then(() => tampilToast("Link disalin! ✓"))
+        .catch(() => {
+          // fallback manual
+          const el = document.createElement("input");
+          el.value = shareUrl;
+          document.body.appendChild(el);
+          el.select();
+          document.execCommand("copy");
+          document.body.removeChild(el);
+          tampilToast("Link disalin! ✓");
+        });
+    }
+  }
+
+  function tampilToast(msg) {
+    setToast(msg);
+    setTimeout(() => setToast(null), 2500);
   }
 
   useEffect(() => {
@@ -63,6 +105,12 @@ export default function TokoPublik() {
       setProducts(productsData || []);
       sinkronkanCart(slug, productsData || []); // harga promo di keranjang ikut terbaru
       setCart(getCart(slug));
+      // Auto-buka modal kalau ada ?p= di URL (dari share link / affiliate)
+      const pid = new URLSearchParams(window.location.search).get("p");
+      if (pid && productsData?.length) {
+        const target = productsData.find((p) => String(p.id) === String(pid));
+        if (target) setSelectedProduct(target);
+      }
       const { data: bannersData } = await supabase
         .from("store_banners").select("*").eq("store_id", storeData.id)
         .eq("is_active", true).order("sort_order", { ascending: true });
@@ -149,7 +197,7 @@ export default function TokoPublik() {
     if (!banner.link_product_id) return;
     const produk = products.find((p) => p.id === banner.link_product_id);
     if (!produk) return;
-    setSelectedProduct(produk);
+    bukaModal(produk);
     trackViewContent(store, produk);
     catatEvent(supabase, store.id, "klik_produk", produk.id);
   }
@@ -306,7 +354,7 @@ export default function TokoPublik() {
               const isBaru = p.created_at && (Date.now() - new Date(p.created_at).getTime()) < DUA_MINGGU_MS;
               const lagiPromo = promoAktif(p);
               return (
-                <button key={p.id} onClick={() => { setSelectedProduct(p); trackViewContent(store, p); catatEvent(supabase, store.id, "klik_produk", p.id); }}
+                <button key={p.id} onClick={() => { bukaModal(p); trackViewContent(store, p); catatEvent(supabase, store.id, "klik_produk", p.id); }}
                   className={`relative rounded-2xl overflow-hidden text-left transition-all duration-300 group hover:-translate-y-1 hover:shadow-xl ${cardBorderClass}`}
                   style={{ background: surface, borderColor: lagiPromo ? "#E8590C" : theme.product.cardStyle === "bordered" ? accent : `${textColor}15`, boxShadow: lagiPromo ? "0 0 0 2px #E8590C55" : undefined }}>
                   {isBaru && (
@@ -366,20 +414,29 @@ export default function TokoPublik() {
           product={selectedProduct}
           store={store}
           accent={accent}
-          onClose={() => setSelectedProduct(null)}
+          onClose={() => bukaModal(null)}
+          onShare={() => shareProduct(selectedProduct)}
           onAddToCart={(variant, qty) => {
             addToCart(slug, selectedProduct, variant, qty);
             refreshCart();
-            setSelectedProduct(null);
+            bukaModal(null);
             setCartOpen(true);
           }}
           onBuyNow={(variant, qty) => {
             addToCart(slug, selectedProduct, variant, qty);
             refreshCart();
-            setSelectedProduct(null);
+            bukaModal(null);
             setCheckoutOpen(true);
           }}
         />
+      )}
+
+      {/* TOAST NOTIFIKASI */}
+      {toast && (
+        <div className="fixed bottom-24 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-2 bg-[#1C1C1A] text-white text-sm font-medium px-4 py-2.5 rounded-full shadow-xl animate-fade-in pointer-events-none">
+          <Check size={14} className="text-green-400" />
+          {toast}
+        </div>
       )}
 
       {/* TOMBOL CART MELAYANG */}
@@ -622,7 +679,7 @@ function MediaCarousel({ media, accent }) {
   );
 }
 
-function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }) {
+function ProductModal({ product, store, accent, onClose, onShare, onAddToCart, onBuyNow }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(
     product.variants?.length > 0 ? product.variants[0] : null
@@ -645,7 +702,16 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
       <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md max-h-[90vh] overflow-y-auto">
         <div className="flex items-center justify-between p-4 border-b border-[#E5E2D9] sticky top-0 bg-white z-10">
           <h2 className="font-bold text-[#1C1C1A]">Detail produk</h2>
-          <button onClick={onClose} className="text-[#8B8D85] hover:text-[#1C1C1A]"><X size={20} /></button>
+          <div className="flex items-center gap-1">
+            <button type="button" onClick={onShare} title="Bagikan produk"
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-[#8B8D85] hover:text-[#1C1C1A] hover:bg-[#F5F4EF] transition-colors">
+              <Share2 size={17} />
+            </button>
+            <button type="button" onClick={onClose}
+              className="w-8 h-8 flex items-center justify-center rounded-lg text-[#8B8D85] hover:text-[#1C1C1A] hover:bg-[#F5F4EF] transition-colors">
+              <X size={18} />
+            </button>
+          </div>
         </div>
 
         <div className="p-4 space-y-4">
