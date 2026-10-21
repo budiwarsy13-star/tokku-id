@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 import { initTracking, trackViewContent, trackInitiateCheckout, trackPurchase, catatEvent, inisialisasiRef, getRefAktif } from "@/lib/tracking";
@@ -10,7 +10,7 @@ import PromoCarousel from "@/components/PromoCarousel";
 import { hargaPromo, promoAktif, setOffsetWaktu } from "@/lib/promo";
 import { FlashSaleBanner, FlashSaleStrip, ChipCountdown, GRADIEN_FLASH } from "@/components/FlashSale";
 import { mergeTheme, HEADER_HEIGHTS, GRID_COLS } from "@/lib/theme";
-import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2, ShieldCheck, Zap, Sparkles } from "lucide-react";
+import { ShoppingCart, X, Search, Truck, Plus, Minus, Trash2, ShieldCheck, Zap, Sparkles, ChevronLeft, ChevronRight, Play } from "lucide-react";
 
 const TITLE_SIZE_BANNER  = { sm: 20, md: 26, lg: 34, xl: 44 };
 const TITLE_SIZE_INLINE  = { sm: 18, md: 22, lg: 28, xl: 36 };
@@ -446,6 +446,123 @@ export default function TokoPublik() {
   );
 }
 
+function MediaCarousel({ media, accent }) {
+  const [activeIdx, setActiveIdx] = useState(0);
+  const touchStartX = useRef(null);
+  const videoRef = useRef(null);
+
+  function prev() { setActiveIdx((i) => (i - 1 + media.length) % media.length); }
+  function next() { setActiveIdx((i) => (i + 1) % media.length); }
+
+  function onTouchStart(e) { touchStartX.current = e.touches[0].clientX; }
+  function onTouchEnd(e) {
+    if (touchStartX.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStartX.current;
+    if (Math.abs(dx) > 40) { dx < 0 ? next() : prev(); }
+    touchStartX.current = null;
+  }
+
+  const current = media[activeIdx];
+  const isVideo = current?.type === "video";
+
+  if (!media.length) {
+    return (
+      <div className="aspect-square rounded-xl overflow-hidden flex items-center justify-center text-5xl opacity-20"
+        style={{ background: `${accent}11` }}>👕</div>
+    );
+  }
+
+  return (
+    <div className="relative rounded-xl overflow-hidden select-none" style={{ background: `${accent}11` }}>
+      {/* Media utama */}
+      <div className="aspect-square" onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+        {isVideo ? (
+          <video
+            ref={videoRef}
+            key={current.url}
+            src={current.url}
+            controls
+            playsInline
+            className="w-full h-full object-cover"
+          />
+        ) : (
+          <img
+            src={current.url}
+            alt=""
+            className="w-full h-full object-cover transition-opacity duration-200"
+          />
+        )}
+      </div>
+
+      {/* Tombol prev/next — muncul kalau lebih dari 1 media */}
+      {media.length > 1 && (
+        <>
+          <button
+            type="button"
+            onClick={prev}
+            className="absolute left-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white transition-colors"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={next}
+            className="absolute right-2 top-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-black/40 hover:bg-black/60 flex items-center justify-center text-white transition-colors"
+          >
+            <ChevronRight size={18} />
+          </button>
+
+          {/* Dot indicator */}
+          <div className="absolute bottom-2 inset-x-0 flex justify-center gap-1.5">
+            {media.map((m, i) => (
+              <button
+                key={i}
+                type="button"
+                onClick={() => setActiveIdx(i)}
+                className="w-1.5 h-1.5 rounded-full transition-all"
+                style={{ background: i === activeIdx ? "white" : "rgba(255,255,255,0.45)", width: i === activeIdx ? 20 : 6 }}
+              />
+            ))}
+          </div>
+
+          {/* Badge video di thumbnail yang aktif */}
+          {isVideo && (
+            <div className="absolute top-2 right-2 flex items-center gap-1 bg-black/50 text-white text-[10px] font-semibold px-2 py-1 rounded-full">
+              <Play size={10} fill="white" /> Video
+            </div>
+          )}
+        </>
+      )}
+
+      {/* Thumbnail strip — tampil kalau media >= 3 */}
+      {media.length >= 3 && (
+        <div className="flex gap-2 px-1 py-2 overflow-x-auto scrollbar-hide" style={{ background: `${accent}0A` }}>
+          {media.map((m, i) => (
+            <button
+              key={i}
+              type="button"
+              onClick={() => setActiveIdx(i)}
+              className="flex-shrink-0 w-12 h-12 rounded-lg overflow-hidden relative transition-all"
+              style={{
+                outline: i === activeIdx ? `2px solid ${accent}` : "2px solid transparent",
+                opacity: i === activeIdx ? 1 : 0.6,
+              }}
+            >
+              {m.type === "video" ? (
+                <div className="w-full h-full bg-black flex items-center justify-center">
+                  <Play size={14} className="text-white" fill="white" />
+                </div>
+              ) : (
+                <img src={m.url} alt="" className="w-full h-full object-cover" />
+              )}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }) {
   const [quantity, setQuantity] = useState(1);
   const [selectedVariant, setSelectedVariant] = useState(
@@ -458,6 +575,12 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
   const stok = selectedVariant ? selectedVariant.stock : product.stock;
   const habis = stok !== undefined && stok !== null && stok <= 0;
 
+  // Gabung semua media: images + videos jadi satu array [{type, url}]
+  const media = [
+    ...(product.images || []).map((url) => ({ type: "image", url })),
+    ...(product.videos || []).map((url) => ({ type: "video", url })),
+  ];
+
   return (
     <div className="fixed inset-0 bg-black/40 flex items-end md:items-center justify-center z-50 p-0 md:p-6 text-[#1C1C1A]">
       <div className="bg-white rounded-t-2xl md:rounded-2xl w-full md:max-w-md max-h-[90vh] overflow-y-auto">
@@ -467,13 +590,7 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
         </div>
 
         <div className="p-4 space-y-4">
-          <div className="aspect-square rounded-xl overflow-hidden" style={{ background: `${accent}11` }}>
-            {product.images?.[0] ? (
-              <img src={product.images[0]} alt={product.name} className="w-full h-full object-cover" />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-5xl opacity-20">👕</div>
-            )}
-          </div>
+          <MediaCarousel media={media} accent={accent} />
 
           <div>
             <p className="font-bold text-[#1C1C1A] text-lg">{product.name}</p>
