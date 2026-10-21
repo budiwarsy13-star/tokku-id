@@ -321,15 +321,13 @@ export default function TokoPublik() {
                       -{p.promo_percent}%
                     </span>
                   )}
-                  <div className={`${imageAspectClass} overflow-hidden relative`} style={{ background: `${accent}11` }}>
-                    {p.images?.[0] ? (
-                      <img src={p.images[0]} alt={p.name}
-                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
-                    ) : (
-                      <div className="w-full h-full flex items-center justify-center">
-                        <span className="text-4xl opacity-20">👕</span>
-                      </div>
-                    )}
+                  <div className="relative">
+                    <MiniCarousel
+                      images={p.images}
+                      videoUrl={p.video_url}
+                      accent={accent}
+                      aspectClass={imageAspectClass}
+                    />
                     {lagiPromo && <ChipCountdown endsAt={p.promo_ends_at} onExpire={promoBerakhir} className="absolute bottom-0 inset-x-0" />}
                   </div>
                   <div className="p-3.5">
@@ -443,6 +441,67 @@ export default function TokoPublik() {
         </div>
       </footer>
     </main>
+  );
+}
+
+function MiniCarousel({ images, videoUrl, accent, aspectClass }) {
+  const [idx, setIdx] = useState(0);
+  const touchStart = useRef(null);
+
+  const allMedia = [
+    ...(images || []).map((url) => ({ type: "image", url })),
+    ...(videoUrl ? [{ type: "video", url: videoUrl }] : []),
+  ];
+  const total = allMedia.length;
+  const current = allMedia[idx] || null;
+
+  function onTouchStart(e) { touchStart.current = e.touches[0].clientX; }
+  function onTouchEnd(e) {
+    if (touchStart.current === null) return;
+    const dx = e.changedTouches[0].clientX - touchStart.current;
+    if (Math.abs(dx) > 40) {
+      e.stopPropagation();
+      setIdx((i) => dx < 0 ? Math.min(i + 1, total - 1) : Math.max(i - 1, 0));
+    }
+    touchStart.current = null;
+  }
+
+  return (
+    <div className={`${aspectClass} overflow-hidden relative`} style={{ background: `${accent}11` }}
+      onTouchStart={onTouchStart} onTouchEnd={onTouchEnd}>
+      {!current ? (
+        <div className="w-full h-full flex items-center justify-center">
+          <span className="text-4xl opacity-20">👕</span>
+        </div>
+      ) : current.type === "video" ? (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-black/80 gap-1">
+          <Play size={28} className="text-white" fill="white" />
+          <span className="text-white text-[10px] font-semibold">Video</span>
+        </div>
+      ) : (
+        <img src={current.url} alt="" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+      )}
+
+      {/* Indikator dot — pakai span bukan button biar ga nested button */}
+      {total > 1 && (
+        <div className="absolute bottom-2 inset-x-0 flex justify-center gap-1 pointer-events-none">
+          {allMedia.map((_, i) => (
+            <span key={i} role="button" tabIndex={-1}
+              onPointerDown={(e) => { e.stopPropagation(); e.preventDefault(); setIdx(i); }}
+              className="rounded-full transition-all cursor-pointer pointer-events-auto"
+              style={{ width: i === idx ? 16 : 5, height: 5, background: i === idx ? "white" : "rgba(255,255,255,0.5)", display: "inline-block", flexShrink: 0 }}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Badge video kecil di sudut kalau ada video tapi slide sekarang bukan video */}
+      {videoUrl && current?.type !== "video" && (
+        <div className="absolute top-2 right-2 flex items-center gap-0.5 bg-black/50 text-white text-[9px] font-bold px-1.5 py-0.5 rounded-full">
+          <Play size={8} fill="white" className="text-white" /> Vid
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -575,10 +634,10 @@ function ProductModal({ product, store, accent, onClose, onAddToCart, onBuyNow }
   const stok = selectedVariant ? selectedVariant.stock : product.stock;
   const habis = stok !== undefined && stok !== null && stok <= 0;
 
-  // Gabung semua media: images + videos jadi satu array [{type, url}]
+  // Gabung semua media: images + video_url jadi satu array [{type, url}]
   const media = [
     ...(product.images || []).map((url) => ({ type: "image", url })),
-    ...(product.videos || []).map((url) => ({ type: "video", url })),
+    ...(product.video_url ? [{ type: "video", url: product.video_url }] : []),
   ];
 
   return (
