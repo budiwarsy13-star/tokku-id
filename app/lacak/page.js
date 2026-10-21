@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
+import BuyerVerifikasi from "@/components/BuyerVerifikasi";
+import { buyerFetch, ambilSesi, keluar } from "@/lib/buyer-session";
 import { useSearchParams } from "next/navigation";
 import { Search, Package, CheckCircle2, Circle, Truck, PackageCheck, Clock, ExternalLink } from "lucide-react";
 
@@ -36,7 +38,8 @@ export default function LacakPesananPage() {
 function LacakPesananContent() {
   const searchParams = useSearchParams();
   const [orderId, setOrderId] = useState(searchParams.get("order") || "");
-  const [buyerPhone, setBuyerPhone] = useState("");
+  const [sesi, setSesi] = useState(null);        // sesi buyer hasil verifikasi email
+  const [siap, setSiap] = useState(false);        // sudah cek localStorage?
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState(null);
   const [error, setError] = useState("");
@@ -50,14 +53,22 @@ function LacakPesananContent() {
     window.open(`https://cekresi.com/?noresi=${encodeURIComponent(resiLangsung.trim())}`, "_blank");
   }
 
+  useEffect(() => {
+    const s = ambilSesi();
+    setSesi(s);
+    setSiap(true);
+    if (s && orderId) cariPesanan(orderId); // datang dari link "Lacak pesanan" setelah checkout
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   async function handleKonfirmasiDiterima() {
     if (!confirm("Pastikan barang udah kamu terima dalam kondisi baik. Konfirmasi sekarang?")) return;
     setConfirming(true);
     setConfirmMsg("");
-    const res = await fetch("/api/lacak/konfirmasi", {
+    const res = await buyerFetch("/api/lacak/konfirmasi", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId: result.orderId, buyerPhone }),
+      body: JSON.stringify({ orderId: result.orderId }),
     });
     const data = await res.json();
     setConfirming(false);
@@ -69,23 +80,28 @@ function LacakPesananContent() {
     }
   }
 
-  async function handleSubmit(e) {
-    e.preventDefault();
+  async function cariPesanan(idPesanan) {
     setLoading(true);
     setError("");
     setResult(null);
-    const res = await fetch("/api/lacak", {
+    const res = await buyerFetch("/api/lacak", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ orderId, buyerPhone }),
+      body: JSON.stringify({ orderId: idPesanan }),
     });
-    const data = await res.json();
+    const data = await res.json().catch(() => ({}));
     setLoading(false);
+    if (res.status === 401) { setSesi(null); setError("Sesi verifikasi habis, silakan verifikasi email lagi."); return; }
     if (data.found) {
       setResult(data.order);
     } else {
       setError(data.message || "Pesanan gak ketemu.");
     }
+  }
+
+  function handleSubmit(e) {
+    e.preventDefault();
+    cariPesanan(orderId);
   }
 
   const adalahCod = result?.paymentMethod === "cod";
@@ -102,28 +118,37 @@ function LacakPesananContent() {
             tok<span className="text-[#D85A30]">k</span>u<span className="text-[#8B8D85] font-normal">.id</span>
           </a>
           <h1 className="text-xl font-bold text-[#1C1C1A] mt-4 mb-1">Lacak pesanan kamu</h1>
-          <p className="text-sm text-[#8B8D85]">Masukin Order ID dan nomor WA yang kamu pakai pas checkout.</p>
+          <p className="text-sm text-[#8B8D85]">
+            {sesi ? `Masuk sebagai ${sesi.email}` : "Verifikasi dulu pakai email yang kamu pakai pas checkout."}
+          </p>
         </div>
 
-        <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-[#E5E2D9] p-6 space-y-4">
-          <div>
-            <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Order ID</label>
-            <input type="text" required value={orderId} onChange={(e) => setOrderId(e.target.value)}
-              placeholder="Contoh: TOKKU-1786359228358"
-              className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm font-mono focus:outline-none focus:border-[#D85A30]" />
+        {siap && !sesi && (
+          <div className="bg-white rounded-2xl border border-[#E5E2D9] p-6">
+            {error && <p className="text-sm text-[#A32D2D] bg-[#FBEAEA] px-4 py-2.5 rounded-lg mb-4">{error}</p>}
+            <BuyerVerifikasi onBerhasil={(s) => { setSesi(s); setError(""); if (orderId) cariPesanan(orderId); }} />
           </div>
-          <div>
-            <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Nomor WhatsApp</label>
-            <input type="tel" required value={buyerPhone} onChange={(e) => setBuyerPhone(e.target.value)}
-              placeholder="08xxxxxxxxxx"
-              className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm focus:outline-none focus:border-[#D85A30]" />
-          </div>
-          {error && <p className="text-sm text-[#A32D2D] bg-[#FBEAEA] px-4 py-2.5 rounded-lg">{error}</p>}
-          <button type="submit" disabled={loading}
-            className="w-full flex items-center justify-center gap-2 py-3 bg-[#D85A30] text-white rounded-xl font-medium hover:bg-[#B84A25] transition-colors disabled:opacity-50">
-            <Search size={16} /> {loading ? "Mencari..." : "Cari pesanan"}
-          </button>
-        </form>
+        )}
+
+        {siap && sesi && (
+          <form onSubmit={handleSubmit} className="bg-white rounded-2xl border border-[#E5E2D9] p-6 space-y-4">
+            <div>
+              <label className="text-xs font-medium text-[#5B6472] uppercase tracking-wider block mb-1.5">Order ID</label>
+              <input type="text" required value={orderId} onChange={(e) => setOrderId(e.target.value)}
+                placeholder="Contoh: TOKKU-7K2M9XQ4PD3A"
+                className="w-full px-4 py-2.5 border border-[#E5E2D9] rounded-lg text-sm font-mono focus:outline-none focus:border-[#D85A30]" />
+            </div>
+            {error && <p className="text-sm text-[#A32D2D] bg-[#FBEAEA] px-4 py-2.5 rounded-lg">{error}</p>}
+            <button type="submit" disabled={loading}
+              className="w-full flex items-center justify-center gap-2 py-3 bg-[#D85A30] text-white rounded-xl font-medium hover:bg-[#B84A25] transition-colors disabled:opacity-50">
+              <Search size={16} /> {loading ? "Mencari..." : "Cari pesanan"}
+            </button>
+            <div className="flex justify-between text-xs">
+              <a href="/portal/pesanan-saya" className="text-[#D85A30] hover:underline">Lihat semua pesanan saya</a>
+              <button type="button" onClick={async () => { await keluar(); setSesi(null); setResult(null); }} className="text-[#8B8D85] hover:text-[#D85A30]">Keluar</button>
+            </div>
+          </form>
+        )}
 
         {/* SHORTCUT: PUNYA NOMOR RESI, LACAK LANGSUNG (gak perlu Order ID/no HP,
             karena posisi paket via kurir emang data publik) */}

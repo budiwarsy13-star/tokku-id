@@ -1,18 +1,15 @@
 import { createClient } from "@supabase/supabase-js";
 import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
+import { autentikasiBuyer } from "@/lib/buyer-auth-server";
 
 // Server-side karena tabel orders gak punya policy select buat public (cuma
-// owner toko). Verifikasi butuh 2 data yang cuma diketahui pembeli: Order ID
-// DAN nomor WA yang dipakai pas checkout — biar orang gak bisa asal nebak
-// Order ID orang lain terus intip datanya.
+// owner toko). Akses WAJIB bawa sesi buyer hasil verifikasi OTP email
+// (Authorization: Bearer ...) dan pesanan harus milik email itu. Order ID + no WA
+// doang GAK CUKUP: dua-duanya bukan rahasia.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-function normalisasiTelepon(nomor) {
-  return (nomor || "").replace(/\D/g, "").replace(/^0/, "62").replace(/^62?/, "62");
-}
 
 export async function POST(request) {
   try {
@@ -23,22 +20,24 @@ export async function POST(request) {
       return Response.json({ found: false, message: "Kebanyakan percobaan. Coba lagi sebentar lagi." }, { status: 429 });
     }
 
-    const { orderId, buyerPhone } = await request.json();
-    if (!orderId || !buyerPhone) {
-      return Response.json({ found: false, message: "Isi Order ID dan nomor WA dulu ya." }, { status: 400 });
+    const auth = await autentikasiBuyer(supabaseAdmin, request);
+    if (auth.error) return auth.error;
+
+    const { orderId } = await request.json().catch(() => ({}));
+    if (!orderId) {
+      return Response.json({ found: false, message: "Isi Order ID dulu ya." }, { status: 400 });
     }
 
+    // Filter buyer_email = email sesi: pesanan orang lain gak akan pernah ketemu.
     const { data: rows } = await supabaseAdmin
       .from("orders")
       .select("*, stores(name, slug, accent_color)")
-      .eq("midtrans_order_id", orderId.trim().toUpperCase());
+      .eq("midtrans_order_id", String(orderId).trim().toUpperCase())
+      .eq("buyer_email", auth.email);
 
     const first = rows?.[0];
-
-    // Pesan generik kalau gak ketemu ATAU nomor gak cocok — jangan kasih tau
-    // mana yang salah, biar gak jadi celah buat nebak-nebak Order ID orang lain.
-    if (!first || normalisasiTelepon(first.buyer_phone) !== normalisasiTelepon(buyerPhone)) {
-      return Response.json({ found: false, message: "Pesanan gak ketemu. Cek lagi Order ID dan nomor WA-nya." });
+    if (!first) {
+      return Response.json({ found: false, message: "Pesanan gak ketemu di email yang terverifikasi ini. Cek lagi Order ID-nya." });
     }
 
     // Field yang sama buat semua produk dalam 1 transaksi (status, kurir, resi,

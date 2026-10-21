@@ -47,7 +47,7 @@ export default function PesananPage() {
   const [sendingChat,    setSendingChat]    = useState(false);
   const [unreadCounts,   setUnreadCounts]   = useState({});    // { orderId: jumlah unread }
   const chatEndRef       = useRef(null);
-  const broadcastChRef   = useRef(null);   // Supabase Broadcast channel untuk chat aktif
+  const chatOrderRef     = useRef(null);   // order yang drawer chatnya sedang terbuka (hindari stale closure)
 
   // ── Init ────────────────────────────────────────────────────
   useEffect(() => {
@@ -104,16 +104,17 @@ export default function PesananPage() {
         // Hanya proses kalau pesan ini milik toko kita dan dari buyer
         if (msg.store_id !== store.id || msg.sender_type !== "buyer") return;
 
-        // Kalau drawer chat order ini sedang terbuka → append via broadcast (sudah dihandle)
-        // Kalau drawer TIDAK terbuka → naikkan badge unread
-        setUnreadCounts((prev) => {
-          // Cek apakah order ini sedang dibuka di drawer
-          // chatOrder diakses via ref agar tidak stale closure
-          return {
-            ...prev,
-            [msg.order_id]: (prev[msg.order_id] || 0) + 1,
-          };
-        });
+        // Drawer chat order ini sedang terbuka → tampilkan pesan langsung & tandai dibaca.
+        if (chatOrderRef.current?.id === msg.order_id) {
+          setChats((prev) => (prev.some((c) => c.id === msg.id) ? prev : [...prev, msg]));
+          supabase.from("chats").update({ is_read: true }).eq("id", msg.id);
+          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+            new Notification(`Pesan dari ${msg.sender_name || "pembeli"}`, { body: msg.message?.slice(0, 80), icon: "/favicon.ico" });
+          }
+          return;
+        }
+        // Drawer TIDAK terbuka → naikkan badge unread
+        setUnreadCounts((prev) => ({ ...prev, [msg.order_id]: (prev[msg.order_id] || 0) + 1 }));
       })
       .subscribe();
 
@@ -125,7 +126,7 @@ export default function PesananPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chats]);
 
-  // ── Buka chat untuk 1 order + join Broadcast channel ────────
+  // ── Buka chat untuk 1 order ────────
   async function bukaChat(order) {
     setChatOrder(order);
     setChatMsg("");
@@ -145,43 +146,10 @@ export default function PesananPage() {
     // Hapus badge unread di row ini
     setUnreadCounts((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
 
-    // ── Join Broadcast channel untuk order ini ──────────────
-    // Lepas channel order sebelumnya jika ada
-    if (broadcastChRef.current) {
-      await supabase.removeChannel(broadcastChRef.current);
-      broadcastChRef.current = null;
-    }
-
-    const ch = supabase
-      .channel(`chat-order-${order.id}`, {
-        config: { broadcast: { self: false } },
-      })
-      .on("broadcast", { event: "new_message" }, ({ payload }) => {
-        if (payload?.sender_type === "buyer") {
-          setChats((prev) => {
-            const sudahAda = prev.some((c) => c.id === payload.id);
-            if (sudahAda) return prev;
-            return [...prev, payload];
-          });
-          // Mark read karena seller sedang lihat
-          supabase.from("chats").update({ is_read: true }).eq("id", payload.id);
-          // Hapus badge unread
-          setUnreadCounts((prev) => { const next = {...prev}; delete next[order.id]; return next; });
-          // Notif browser kalau tab tidak fokus
-          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-            new Notification(`Pesan dari ${payload.sender_name || "pembeli"}`, {
-              body: payload.message?.slice(0, 80),
-              icon: "/favicon.ico",
-            });
-          }
-        }
-      })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") broadcastChRef.current = ch;
-      });
+    chatOrderRef.current = order;
   }
 
-  // ── Kirim balasan seller + broadcast ke buyer ───────────────
+  // ── Kirim balasan seller (buyer menerimanya lewat polling API) ──
   async function kirimChat(e) {
     e.preventDefault();
     if (!chatMsg.trim() || !chatOrder || !store) return;
@@ -202,14 +170,6 @@ export default function PesananPage() {
     if (newMsg) {
       // Append ke UI seller
       setChats((prev) => [...prev, newMsg]);
-      // Broadcast ke buyer via channel real-time
-      if (broadcastChRef.current) {
-        await broadcastChRef.current.send({
-          type:    "broadcast",
-          event:   "new_message",
-          payload: newMsg,
-        });
-      }
     }
     setSendingChat(false);
   }
@@ -227,7 +187,12 @@ export default function PesananPage() {
     }
     if (newStatus === "selesai") updateData.completed_at = new Date().toISOString();
 
-    await supabase.from("orders").update(updateData).eq("midtrans_order_id", groupKey);
+    const { error: errUpdate } = await supabase.from("orders").update(updateData).eq("midtrans_order_id", groupKey);
+    if (errUpdate) {
+      // Database menolak (mis. loncat status yang gak diizinkan). Jangan pura-pura berhasil.
+      alert(errUpdate.code === "42501" ? "Perubahan status ini tidak diizinkan." : "Gagal memperbarui status. Coba lagi.");
+      return;
+    }
     setOrders(orders.map((o) => (o.midtrans_order_id === groupKey ? { ...o, ...updateData } : o)));
 
     const anggota        = orders.filter((o) => o.midtrans_order_id === groupKey);
@@ -249,6 +214,18 @@ export default function PesananPage() {
         title: "Pesanan selesai",
         message: `Pesanan ${ringkasanProduk} sudah ditandai selesai.`,
       });
+    }
+
+    // WhatsApp ke pembeli (dikirim / selesai). Best-effort, 1x per status (dijaga di server).
+    if (newStatus === "shipped" || newStatus === "selesai") {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        await fetch("/api/wa/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
+          body: JSON.stringify({ type: "status_update", orderId: rowId }),
+        });
+      } catch {}
     }
   }
 
@@ -367,11 +344,11 @@ export default function PesananPage() {
                 </button>
               ))}
             </div>
-            <div className="relative w-full sm:w-auto">
+            <div className="relative">
               <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-[#8B8D85]" />
               <input type="text" value={search} onChange={(e) => setSearch(e.target.value)}
                 placeholder="Cari pembeli / produk..."
-                className="pl-8 pr-3 py-1.5 text-sm border border-[#E5E2D9] rounded-lg focus:outline-none focus:border-[#D85A30] w-full sm:w-56" />
+                className="pl-8 pr-3 py-1.5 text-sm border border-[#E5E2D9] rounded-lg focus:outline-none focus:border-[#D85A30] w-56" />
             </div>
           </div>
 
@@ -380,10 +357,7 @@ export default function PesananPage() {
               {orders.length === 0 ? "Belum ada pesanan masuk." : "Gak ada pesanan yang cocok."}
             </p>
           ) : (
-            <>
-              {/* Desktop table — hidden di mobile */}
-              <div className="hidden sm:block overflow-x-auto">
-              <table className="w-full text-sm">
+            <table className="w-full text-sm">
               <thead className="bg-[#F1EFE8] text-[#5B6472] text-left">
                 <tr>
                   <th className="px-4 py-3 font-medium">Produk</th>
@@ -484,14 +458,15 @@ export default function PesananPage() {
                             if (e.target.value === "shipped") setOrderUntukResi(o);
                             else updateStatus(o.id, e.target.value);
                           }}
-                          disabled={o.status === "gagal"}
+                          disabled={["pending", "selesai", "gagal"].includes(o.status)}
                           className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
                         >
-                          <option value="pending">Menunggu</option>
-                          <option value="paid">Dibayar</option>
-                          <option value="shipped">Dikirim</option>
-                          <option value="selesai">Selesai</option>
-                          {o.status === "gagal" && <option value="gagal">Dibatalkan</option>}
+                          {/* Cuma transisi yang diizinkan database: Dibayar→Dikirim→Selesai.
+                              "Dibayar" cuma dari Midtrans (atau konfirmasi manual pesanan Perlu Review). */}
+                          <option value={o.status}>{STATUS_LABEL[o.status]?.label || o.status}</option>
+                          {o.status === "paid" && <option value="shipped">Dikirim</option>}
+                          {o.status === "shipped" && <option value="selesai">Selesai</option>}
+                          {o.status === "perlu_review" && <option value="paid">Konfirmasi sudah dibayar</option>}
                         </select>
                         )}
                         {o.waybill_number && (
@@ -506,122 +481,6 @@ export default function PesananPage() {
                 })}
               </tbody>
             </table>
-            </div>
-
-            {/* Mobile cards — hidden di desktop */}
-            <div className="sm:hidden divide-y divide-[#F1EFE8]">
-              {filteredOrders.map((o) => {
-                const batasKirim = hitungBatasKirim(o);
-                const unread     = unreadCounts[o.id] || 0;
-                return (
-                  <div key={o.id} className="p-4 space-y-3">
-
-                    {/* Produk + Status select */}
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-semibold text-[#1C1C1A] line-clamp-2">{o.product_name}</p>
-                        <button onClick={() => navigator.clipboard.writeText(o.midtrans_order_id)}
-                          title="Klik buat copy Order ID"
-                          className="text-xs text-[#8B8D85] font-mono hover:text-[#D85A30] hover:underline block truncate max-w-full">
-                          {o.midtrans_order_id}
-                        </button>
-                      </div>
-                      <div className="flex-shrink-0 text-right">
-                        {isCod(o) ? (
-                          <select
-                            value={o.status}
-                            onChange={(e) => {
-                              const v = e.target.value;
-                              if (v === "shipped") setOrderUntukResi(o);
-                              else if (v === "selesai") aksiCod(o, "lunas");
-                              else if (v === "gagal") aksiCod(o, "batal");
-                            }}
-                            disabled={o.status === "selesai" || o.status === "gagal"}
-                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
-                          >
-                            {o.status === "cod" && <option value="cod">COD · Perlu dikirim</option>}
-                            <option value="shipped">Dikirim (belum dibayar)</option>
-                            {o.status === "shipped" && <option value="selesai">Selesai (COD lunas)</option>}
-                            {o.status === "selesai" && <option value="selesai">Selesai</option>}
-                            {o.status === "gagal"
-                              ? <option value="gagal">Dibatalkan</option>
-                              : <option value="gagal">{o.status === "shipped" ? "COD ditolak / gagal" : "Batalkan pesanan"}</option>}
-                          </select>
-                        ) : (
-                          <select
-                            value={o.status}
-                            onChange={(e) => {
-                              if (e.target.value === "shipped") setOrderUntukResi(o);
-                              else updateStatus(o.id, e.target.value);
-                            }}
-                            disabled={o.status === "gagal"}
-                            className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
-                          >
-                            <option value="pending">Menunggu</option>
-                            <option value="paid">Dibayar</option>
-                            <option value="shipped">Dikirim</option>
-                            <option value="selesai">Selesai</option>
-                            {o.status === "gagal" && <option value="gagal">Dibatalkan</option>}
-                          </select>
-                        )}
-                        {o.waybill_number && (
-                          <button onClick={() => setOrderUntukResi(o)}
-                            className="block text-[11px] text-[#8B8D85] font-mono mt-1 hover:text-[#D85A30] hover:underline">
-                            Resi: {o.waybill_number}
-                          </button>
-                        )}
-                      </div>
-                    </div>
-
-                    {/* COD badge */}
-                    {isCod(o) && (
-                      <div className="flex items-start gap-1.5 text-[11px] leading-snug text-[#B8600B] bg-[#FCEFE3] rounded-md px-2 py-1.5">
-                        <Banknote size={13} className="mt-px flex-shrink-0" />
-                        <span>
-                          <strong>COD</strong>{" "}
-                          {o.status === "cod" && `Belum dikirim · tagih ${rupiahTotal(o)} lewat kurir COD.`}
-                          {o.status === "shipped" && !o.cod_paid_at && `Belum dibayar · menunggu kurir menyetor ${rupiahTotal(o)}.`}
-                          {o.status === "selesai" && o.cod_paid_at && `Lunas ${new Date(o.cod_paid_at).toLocaleDateString("id-ID", { day: "2-digit", month: "short" })} (${o.cod_paid_source === "courier_webhook" ? "dari ekspedisi" : "konfirmasi seller"}).`}
-                          {o.status === "gagal" && "Dibatalkan / ditolak pembeli."}
-                        </span>
-                      </div>
-                    )}
-
-                    {/* Info pembeli */}
-                    <div className="bg-[#FAFAF7] rounded-lg p-3 space-y-0.5">
-                      <p className="text-sm font-medium text-[#1C1C1A]">{o.buyer_name}</p>
-                      <p className="text-xs text-[#8B8D85]">{o.buyer_phone}</p>
-                      <p className="text-xs text-[#8B8D85]">{o.full_address}, {o.destination_label}</p>
-                    </div>
-
-                    {/* Qty · total · batas kirim · chat */}
-                    <div className="flex items-center justify-between gap-2">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <span className="text-sm text-[#5B6472]">{o.quantity}x</span>
-                        <span className="text-sm font-semibold text-[#1C1C1A]">Rp{Number(o.total_price).toLocaleString("id-ID")}</span>
-                        {batasKirim && (
-                          <span className={`text-xs font-medium px-2 py-0.5 rounded-full ${batasKirim.color}`}>
-                            {batasKirim.label}
-                          </span>
-                        )}
-                      </div>
-                      <button onClick={() => bukaChat(o)}
-                        className="relative p-2 rounded-lg hover:bg-[#EDE9FE] transition-colors flex-shrink-0"
-                        title="Buka chat dengan pembeli">
-                        <MessageCircle size={18} className={unread > 0 ? "text-[#7C3AED]" : "text-[#C4C2BA]"} strokeWidth={1.75} />
-                        {unread > 0 && (
-                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 bg-[#7C3AED] text-white text-[9px] font-bold rounded-full flex items-center justify-center">
-                            {unread}
-                          </span>
-                        )}
-                      </button>
-                    </div>
-
-                  </div>
-                );
-              })}
-            </div>
-            </>
           )}
         </div>
       </div>
@@ -653,11 +512,8 @@ export default function PesananPage() {
                 <p className="font-bold text-[#1C1C1A] truncate">{chatOrder.buyer_name}</p>
                 <p className="text-xs text-[#8B8D85] truncate">{chatOrder.product_name}</p>
               </div>
-              <button onClick={async () => {
-                if (broadcastChRef.current) {
-                  await supabase.removeChannel(broadcastChRef.current);
-                  broadcastChRef.current = null;
-                }
+              <button onClick={() => {
+                chatOrderRef.current = null;
                 setChatOrder(null);
               }}
                 className="p-2 rounded-xl hover:bg-[#F1EFE8] text-[#5B6472]">

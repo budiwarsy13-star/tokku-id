@@ -1,18 +1,14 @@
 import { createClient } from "@supabase/supabase-js";
 import { kirimPush } from "@/lib/push-server";
 import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
+import { autentikasiBuyer } from "@/lib/buyer-auth-server";
 
-// Konfirmasi "pesanan diterima" dari sisi pembeli. Verifikasi ulang Order ID +
-// nomor WA (sama kayak /api/lacak) biar cuma pemilik pesanan yang bisa
-// nge-trigger ini — bukan asal siapa aja yang nebak Order ID.
+// Konfirmasi "pesanan diterima" dari sisi pembeli. Wajib sesi buyer terverifikasi
+// (OTP email) dan pesanan harus milik email itu (sama kayak /api/lacak).
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-function normalisasiTelepon(nomor) {
-  return (nomor || "").replace(/\D/g, "").replace(/^0/, "62").replace(/^62?/, "62");
-}
 
 export async function POST(request) {
   try {
@@ -21,19 +17,22 @@ export async function POST(request) {
       return Response.json({ success: false, message: "Kebanyakan percobaan. Coba lagi sebentar lagi." }, { status: 429 });
     }
 
-    const { orderId, buyerPhone } = await request.json();
-    if (!orderId || !buyerPhone) {
+    const auth = await autentikasiBuyer(supabaseAdmin, request);
+    if (auth.error) return auth.error;
+
+    const { orderId } = await request.json().catch(() => ({}));
+    if (!orderId) {
       return Response.json({ success: false, message: "Data gak lengkap." }, { status: 400 });
     }
 
     const { data: rows } = await supabaseAdmin
       .from("orders")
       .select("*")
-      .eq("midtrans_order_id", orderId.trim().toUpperCase());
+      .eq("midtrans_order_id", String(orderId).trim().toUpperCase())
+      .eq("buyer_email", auth.email);
 
     const first = rows?.[0];
-
-    if (!first || normalisasiTelepon(first.buyer_phone) !== normalisasiTelepon(buyerPhone)) {
+    if (!first) {
       return Response.json({ success: false, message: "Pesanan gak ketemu." }, { status: 404 });
     }
 

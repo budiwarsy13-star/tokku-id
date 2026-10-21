@@ -9,6 +9,7 @@ import { kirimPush } from "@/lib/push-server";
 import { kembalikanStok } from "@/lib/stock-server";
 import { aktifkanPaket, tandaiTagihanGagal } from "@/lib/plan-server";
 import { isPro } from "@/lib/plans";
+import { kirimNotifWA } from "@/lib/wa-notify-server";
 
 // Service role, BUKAN client biasa -- ini request server-to-server dari
 // Midtrans (bukan dari browser), dan update ke tabel orders harus bisa
@@ -198,15 +199,11 @@ export async function POST(request) {
         orderId: first.id,
       });
 
-      // Notif WA ke seller -- tetap dipertahankan (masih dipakai). Best-effort:
-      // kalau gagal kirim, jangan sampai bikin webhook ini return error ke
-      // Midtrans (nanti malah di-retry terus padahal order-nya udah paid).
+      // Notif WA ke seller. Dulu: fetch ke /api/wa/notify dengan orderId = ID Midtrans (bukan UUID
+      // orders.id) + tanpa autentikasi -> gak pernah jalan. Sekarang dipanggil langsung dari server.
+      // Best-effort: gagal kirim jangan bikin webhook error (Midtrans bakal retry padahal sudah paid).
       try {
-        await fetch(`${process.env.NEXT_PUBLIC_SITE_URL || process.env.NEXT_PUBLIC_BASE_URL}/api/wa/notify`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ type: "order_masuk", orderId: order_id }),
-        });
+        await kirimNotifWA(supabaseAdmin, { type: "order_masuk", orderId: first.id });
       } catch (e) {
         console.error("Gagal kirim WA notify ke seller:", e.message);
       }

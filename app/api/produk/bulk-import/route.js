@@ -13,7 +13,8 @@
 import { createClient } from "@supabase/supabase-js";
 import { cekRateLimit, ambilIp } from "@/lib/rate-limit-server";
 import { isPro } from "@/lib/plans";
-import { validasiBarisProduk, unduhDanUploadGambar } from "@/lib/bulk-import-server";
+import { validasiBarisProduk } from "@/lib/bulk-import-server";
+import { unduhDanUploadGambar } from "@/lib/image-download-server";
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,

@@ -1,30 +1,22 @@
 // app/portal/page.js
 "use client";
-import { useState } from "react";
-import { Package, Search, ArrowRight, MessageCircle, ShieldCheck } from "lucide-react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import BuyerVerifikasi from "@/components/BuyerVerifikasi";
+import { ambilSesi } from "@/lib/buyer-session";
+import { Package, MessageCircle, ShieldCheck } from "lucide-react";
 
 export default function PortalLanding() {
-  const [phone, setPhone] = useState("");
-  const [loading, setLoading] = useState(false);
-  const [notFound, setNotFound] = useState(false);
+  const router = useRouter();
+  const [cek, setCek] = useState(true);
 
-  async function handleCari(e) {
-    e.preventDefault();
-    if (!phone) return;
-    setLoading(true);
-    setNotFound(false);
+  // Sudah punya sesi terverifikasi? Langsung ke daftar pesanan.
+  useEffect(() => {
+    if (ambilSesi()) router.replace("/portal/pesanan-saya");
+    else setCek(false);
+  }, [router]);
 
-    const raw = phone.replace(/\D/g, "");
-    const res = await fetch(`/api/portal/orders?phone=${raw}`);
-    const data = await res.json();
-    setLoading(false);
-
-    if (!data.orders || data.orders.length === 0) {
-      setNotFound(true);
-      return;
-    }
-    window.location.href = `/portal/${raw}`;
-  }
+  if (cek) return <main className="min-h-screen bg-[#FAFAF7]" />;
 
   return (
     <main className="min-h-screen bg-[#FAFAF7] flex flex-col items-center justify-center px-6 py-12">
@@ -41,44 +33,10 @@ export default function PortalLanding() {
             <Package size={26} className="text-[#D85A30]" />
           </div>
           <h1 className="text-2xl font-black text-[#1C1C1A] mb-2">Lacak pesananmu</h1>
-          <p className="text-sm text-[#8B8D85]">Masukkan nomor WhatsApp yang kamu pakai saat checkout.</p>
+          <p className="text-sm text-[#8B8D85]">Verifikasi dengan email yang kamu pakai saat checkout.</p>
         </div>
 
-        {/* Form */}
-        <form onSubmit={handleCari} className="space-y-4">
-          <div>
-            <label className="text-xs font-bold text-[#5B6472] uppercase tracking-wider block mb-2">
-              Nomor WhatsApp
-            </label>
-            <input
-              type="tel"
-              value={phone}
-              onChange={(e) => { setPhone(e.target.value); setNotFound(false); }}
-              placeholder="08xxxxxxxxxx"
-              className="w-full px-4 py-3.5 border-2 border-[#E5E2D9] rounded-2xl text-sm focus:outline-none focus:border-[#D85A30] transition-all"
-              required
-            />
-          </div>
-
-          {notFound && (
-            <div className="bg-[#FBEAEA] border border-[#F0BEBE] rounded-xl px-4 py-3 text-sm text-[#A32D2D]">
-              Belum ada pesanan yang ditemukan untuk nomor ini.
-            </div>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full py-3.5 bg-[#D85A30] text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 hover:bg-[#B84A25] transition-colors disabled:opacity-50"
-          >
-            {loading ? (
-              <><svg className="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none">
-                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"/>
-                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/>
-              </svg>Mencari...</>
-            ) : <><Search size={16} />Cari Pesanan</>}
-          </button>
-        </form>
+        <BuyerVerifikasi onBerhasil={() => router.replace("/portal/pesanan-saya")} />
 
         {/* Features */}
         <div className="mt-8 space-y-3">

@@ -3,7 +3,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useSearchParams } from "next/navigation";
-import { supabase } from "@/lib/supabase";
+import { buyerFetch } from "@/lib/buyer-session";
 import {
   ArrowLeft, CheckCircle2, Package, Truck, Clock, XCircle,
   MessageCircle, AlertTriangle, RotateCcw, Star, Send,
@@ -69,7 +69,8 @@ export default function PortalOrderDetail() {
   const [copied, setCopied] = useState(false);
 
   async function loadData() {
-    const res = await fetch(`/api/portal/orders?orderId=${orderId}`);
+    const res = await buyerFetch(`/api/portal/orders?orderId=${orderId}`);
+    if (res.status === 401) { window.location.replace(`/portal`); return; }
     const d = await res.json();
     setData(d);
     setLoading(false);
@@ -83,13 +84,13 @@ export default function PortalOrderDetail() {
 
       // Init welcome message jika chat masih kosong
       if (!d.chats || d.chats.length === 0) {
-        await fetch("/api/portal/chat", {
+        await buyerFetch("/api/portal/chat", {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ orderId, storeId: d.order.store_id }),
+          body: JSON.stringify({ orderId }),
         });
         // Reload supaya welcome message muncul
-        const r2 = await fetch(`/api/portal/orders?orderId=${orderId}`);
+        const r2 = await buyerFetch(`/api/portal/orders?orderId=${orderId}`);
         const d2 = await r2.json();
         setData(d2);
       }
@@ -104,85 +105,48 @@ export default function PortalOrderDetail() {
     if (window.location.hash === "#ulasan") setActiveSection("ulasan");
   }, []);
 
-  // ── Realtime: Broadcast channel buat live chat dua arah ─────
-  // Broadcast lebih reliable dari postgres_changes untuk filter non-PK column
-  const broadcastChannelRef = useRef(null);
+  // ── Pesan baru dari penjual: polling ke API (butuh sesi terverifikasi) tiap 6 detik ──
+  // Dulu pakai Supabase Broadcast di channel publik "chat-order-<id>" -> isi chat bisa disadap siapa
+  // pun yang tahu ID pesanan. Sekarang semua data lewat API yang mengecek kepemilikan.
+  const jumlahPesanSeller = useRef(0);
+  useEffect(() => {
+    jumlahPesanSeller.current = (data?.chats || []).filter((c) => c.sender_type === "seller").length;
+  }, [data?.chats]);
 
   useEffect(() => {
     if (!orderId) return;
-
-    const channel = supabase
-      .channel(`chat-order-${orderId}`, {
-        config: { broadcast: { self: false } }, // jangan terima pesan dari diri sendiri
-      })
-      .on("broadcast", { event: "new_message" }, ({ payload }) => {
-        // Terima pesan dari seller secara real-time
-        if (payload?.sender_type === "seller") {
-          setData((prev) => {
-            if (!prev) return prev;
-            // Cegah duplikat
-            const sudahAda = prev.chats?.some((c) => c.id === payload.id);
-            if (sudahAda) return prev;
-            return { ...prev, chats: [...(prev.chats || []), payload] };
-          });
-          // Notif browser jika tab tidak difokus
-          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-            new Notification("Pesan baru dari penjual", {
-              body: payload.message?.slice(0, 80),
-              icon: "/favicon.ico",
-            });
-          }
+    const timer = setInterval(async () => {
+      if (document.hidden) return;
+      try {
+        const res = await buyerFetch(`/api/portal/orders?orderId=${orderId}`);
+        if (!res.ok) return;
+        const d = await res.json();
+        const barukah = (d.chats || []).filter((c) => c.sender_type === "seller").length > jumlahPesanSeller.current;
+        setData((prev) => (prev ? { ...prev, chats: d.chats || prev.chats, events: d.events || prev.events, order: d.order || prev.order } : prev));
+        if (barukah && "Notification" in window && Notification.permission === "granted") {
+          new Notification("Pesan baru dari penjual", { icon: "/favicon.ico" });
         }
-      })
-      .subscribe((status) => {
-        if (status === "SUBSCRIBED") {
-          broadcastChannelRef.current = channel;
-        }
-      });
-
-    return () => {
-      broadcastChannelRef.current = null;
-      supabase.removeChannel(channel);
-    };
+      } catch {}
+    }, 6000);
+    return () => clearInterval(timer);
   }, [orderId]);
 
-  // Buyer klik FAQ → kirim question sebagai pesan buyer, lalu bot auto-reply
+  // Buyer klik FAQ → server menyimpan pertanyaan + jawaban bot (jawaban diambil dari DB, bukan dari client)
   async function handleFAQ(template) {
     if (!data?.order || botSending) return;
     setBotSending(true);
-
-    // Kirim pertanyaan dari buyer
-    const qRes = await fetch("/api/portal/chat", {
+    const res = await buyerFetch("/api/portal/chat", {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderId, message: template.question,
-        senderType: "buyer", senderName: data.order.buyer_name,
-      }),
+      body: JSON.stringify({ orderId, faqId: template.id }),
     });
-    const qData = await qRes.json();
-    if (qData.chat) {
-      setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), qData.chat] }));
-      // Broadcast pertanyaan buyer ke seller
-      if (broadcastChannelRef.current) {
-        await broadcastChannelRef.current.send({
-          type: "broadcast", event: "new_message", payload: qData.chat,
-        });
-      }
-    }
-
-    // Delay singkat supaya terasa natural, baru kirim auto-reply
-    await new Promise((r) => setTimeout(r, 600));
-
-    const aRes = await fetch("/api/portal/chat", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderId, message: template.answer,
-        senderType: "bot", senderName: "Pesan Otomatis",
-      }),
-    });
-    const aData = await aRes.json();
-    if (aData.chat) {
-      setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), aData.chat] }));
+    const d = await res.json().catch(() => ({}));
+    if (res.ok && d.chats?.length) {
+      const [tanya, jawab] = d.chats;
+      setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), tanya] }));
+      await new Promise((r) => setTimeout(r, 600)); // jeda singkat biar terasa natural
+      if (jawab) setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), jawab] }));
+    } else if (res.status !== 401) {
+      alert(d.error || "Gagal mengirim pertanyaan.");
     }
     setBotSending(false);
   }
@@ -195,37 +159,26 @@ export default function PortalOrderDetail() {
     setChatMsg("");
 
     // Optimistic update: tampilkan pesan langsung tanpa tunggu server
-    const tempMsg = {
-      id: `temp-${Date.now()}`,
-      order_id: orderId,
-      sender_type: "buyer",
-      sender_name: data.order.buyer_name,
-      message: msgText,
-      created_at: new Date().toISOString(),
-      is_read: false,
-    };
-    setData((prev) => ({ ...prev, chats: [...(prev?.chats || []), tempMsg] }));
+    const tempId = `temp-${Date.now()}`;
+    setData((prev) => ({
+      ...prev,
+      chats: [...(prev?.chats || []), {
+        id: tempId, order_id: orderId, sender_type: "buyer", sender_name: data.order.buyer_name,
+        message: msgText, created_at: new Date().toISOString(), is_read: false,
+      }],
+    }));
 
-    // Kirim ke server
-    const res = await fetch("/api/portal/chat", {
+    const res = await buyerFetch("/api/portal/chat", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        orderId, message: msgText,
-        senderType: "buyer",
-        senderName: data.order.buyer_name,
-      }),
+      body: JSON.stringify({ orderId, message: msgText }),
     });
-
-    // Broadcast ke seller secara real-time via channel
-    if (res.ok && broadcastChannelRef.current) {
-      const saved = await res.json();
-      await broadcastChannelRef.current.send({
-        type: "broadcast",
-        event: "new_message",
-        payload: saved.chat || tempMsg,
-      });
-    }
+    const saved = await res.json().catch(() => ({}));
+    setData((prev) => ({
+      ...prev,
+      chats: (prev?.chats || []).flatMap((c) => (c.id !== tempId ? [c] : res.ok && saved.chat ? [saved.chat] : [])),
+    }));
+    if (!res.ok && res.status !== 401) alert(saved.error || "Pesan gagal terkirim.");
     setSendingChat(false);
   }
 
@@ -234,16 +187,13 @@ export default function PortalOrderDetail() {
     if (!rating) return alert("Pilih rating dulu ya.");
     setSubmittingReview(true);
     const o = data.order;
-    await fetch("/api/portal/actions", {
+    const res = await buyerFetch("/api/portal/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "review", orderId, productId: o.product_id, storeId: o.store_id,
-        buyerName: o.buyer_name, buyerPhone: o.buyer_phone,
-        rating, reviewText,
-      }),
+      body: JSON.stringify({ action: "review", orderId, rating, reviewText }),
     });
-    setReviewDone(true);
+    if (res.ok) setReviewDone(true);
+    else { const d = await res.json().catch(() => ({})); alert(d.error || "Gagal mengirim ulasan."); }
     setSubmittingReview(false);
   }
 
@@ -252,14 +202,10 @@ export default function PortalOrderDetail() {
     if (!complaintType || !complaintDesc) return;
     setSubmittingComplaint(true);
     const o = data.order;
-    const res = await fetch("/api/portal/actions", {
+    const res = await buyerFetch("/api/portal/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "complaint", orderId, storeId: o.store_id,
-        buyerName: o.buyer_name, buyerPhone: o.buyer_phone,
-        type: complaintType, description: complaintDesc, involvesCs,
-      }),
+      body: JSON.stringify({ action: "complaint", orderId, type: complaintType, description: complaintDesc, involvesCs }),
     });
     setSubmittingComplaint(false);
     if (res.ok) { await loadData(); setActiveSection("tracking"); }
@@ -271,14 +217,10 @@ export default function PortalOrderDetail() {
     if (!returnReason) return;
     setSubmittingReturn(true);
     const o = data.order;
-    const res = await fetch("/api/portal/actions", {
+    const res = await buyerFetch("/api/portal/actions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        action: "return", orderId, storeId: o.store_id,
-        buyerName: o.buyer_name, buyerPhone: o.buyer_phone,
-        reason: returnReason, description: returnDesc,
-      }),
+      body: JSON.stringify({ action: "return", orderId, reason: returnReason, description: returnDesc }),
     });
     setSubmittingReturn(false);
     if (res.ok) { await loadData(); setActiveSection("tracking"); }
@@ -306,7 +248,7 @@ export default function PortalOrderDetail() {
 
   // Build tracking timeline
   const doneTypes = new Set(events.map((e) => e.event_type));
-  const isCancelled = order.status === "dibatalkan";
+  const isCancelled = order.status === "gagal" || order.status === "dibatalkan";
   const isDelivered = order.status === "selesai" || doneTypes.has("delivered");
   const deliveredEvent = events.find((e) => e.event_type === "delivered");
 
@@ -690,7 +632,7 @@ export default function PortalOrderDetail() {
                   <div className="mt-4 p-3 bg-[#EFF6FF] rounded-xl border border-[#BFDBFE]">
                     <p className="text-xs font-bold text-[#1E40AF] mb-1">CS Tokku.id dilibatkan</p>
                     <p className="text-xs text-[#1E40AF]">Tim kami akan menghubungi kamu via WhatsApp dalam 1×24 jam.</p>
-                    <a href="https://wa.me/6281234567890?text=Halo+CS+Tokku.id%2C+saya+ingin+melaporkan+komplain+pesanan+{orderId}"
+                    <a href={`https://wa.me/6281234567890?text=Halo+CS+Tokku.id%2C+saya+ingin+melaporkan+komplain+pesanan+${encodeURIComponent(order.midtrans_order_id || "")}`}
                       target="_blank"
                       className="mt-2 flex items-center gap-1.5 text-xs font-medium text-[#1E40AF] underline"
                     >

@@ -6,6 +6,17 @@ import { kurangiStokAtomic, kembalikanStok } from "@/lib/stock-server";
 import { ambilIp, cekRateLimit } from "@/lib/rate-limit-server";
 import { hargaPromo } from "@/lib/promo";
 import { kirimPush } from "@/lib/push-server";
+import { kirimNotifWA } from "@/lib/wa-notify-server";
+import { normalisasiEmail } from "@/lib/buyer-auth-server";
+import crypto from "crypto";
+
+// Order ID acak (60 bit) — dulu `TOKKU-${Date.now()}` yang bisa ditebak dari waktu checkout.
+function buatOrderId() {
+  const huruf = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; // 32 karakter, tanpa yang mirip (0/O, 1/I)
+  let s = "";
+  for (const b of crypto.randomBytes(12)) s += huruf[b % huruf.length];
+  return `TOKKU-${s}`;
+}
 
 // ======================================================================
 // SATU-SATUNYA JALAN buat bikin order + transaksi pembayaran.
@@ -188,7 +199,8 @@ export async function POST(request) {
     // 5. Insert baris order — SEMUA baris share midtrans_order_id yang sama
     //    (1 transaksi = banyak baris produk). Ongkir & diskon ditotal ke
     //    baris pertama aja biar SUM(total_price) = grandTotal persis.
-    const midtransOrderId = `TOKKU-${Date.now()}`;
+    const midtransOrderId = buatOrderId();
+    const emailBuyer = normalisasiEmail(buyerEmail);
     const rows = itemsTervalidasi.map((item, idx) => {
       const isFirst = idx === 0;
       const itemSubtotal = item.unitPrice * item.quantity;
@@ -204,7 +216,7 @@ export async function POST(request) {
         total_price: rowTotal,
         status: isCOD ? "cod" : "pending",
         payment_method: isCOD ? "cod" : "online",
-        buyer_email: buyerEmail?.trim() || null,
+        buyer_email: emailBuyer,
         destination_id: String(destinationId),
         destination_label: destinationLabel || "",
         full_address: fullAddress.trim(),
@@ -251,15 +263,18 @@ export async function POST(request) {
       } catch (e) {
         console.error("Gagal kirim push COD:", e.message); // best-effort, jangan gagalin checkout
       }
+      // WhatsApp: ke seller (ada pesanan COD) + ke buyer (konfirmasi). Best-effort.
+      try {
+        const { data: baris } = await supabaseAdmin.from("orders").select("id").eq("midtrans_order_id", midtransOrderId).limit(1);
+        if (baris?.[0]) {
+          await kirimNotifWA(supabaseAdmin, { type: "order_masuk", orderId: baris[0].id });
+          await kirimNotifWA(supabaseAdmin, { type: "order_created_buyer", orderId: baris[0].id });
+        }
+      } catch (e) {
+        console.error("Gagal kirim WA COD:", e.message);
+      }
       return Response.json({ success: true, cod: true, orderId: midtransOrderId, grandTotal });
     }
-
-    await supabaseAdmin.from("notifications").insert({
-      store_id: storeId,
-      type: "order_masuk",
-      title: "Pesanan baru masuk",
-      message: `${buyerName} memesan ${ringkasanProduk}. Menunggu pembayaran.`,
-    });
 
     // 7. Bikin transaksi Midtrans pakai grandTotal yang OTORITATIF dari server.
     const itemDetails = [
@@ -272,7 +287,7 @@ export async function POST(request) {
       transaction_details: { order_id: midtransOrderId, gross_amount: grandTotal },
       customer_details: {
         first_name: buyerName.trim(),
-        email: buyerEmail || `${buyerPhone}@tokku.id`,
+        email: emailBuyer,
         phone: buyerPhone.trim(),
       },
       item_details: itemDetails,
@@ -290,6 +305,15 @@ export async function POST(request) {
     } catch (e) {
       console.error("Gagal simpan payment_url:", e.message);
     }
+
+    // Notifikasi "pesanan masuk" dikirim SETELAH transaksi Midtrans berhasil dibuat (sebelumnya
+    // dikirim lebih dulu, jadi kalau Midtrans gagal & order di-rollback, seller tetap dapat notif palsu).
+    await supabaseAdmin.from("notifications").insert({
+      store_id: storeId,
+      type: "order_masuk",
+      title: "Pesanan baru masuk",
+      message: `${buyerName} memesan ${ringkasanProduk}. Menunggu pembayaran.`,
+    });
 
     return Response.json({
       success: true,

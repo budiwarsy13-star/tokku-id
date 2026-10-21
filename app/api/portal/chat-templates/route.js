@@ -5,6 +5,11 @@
 // DELETE ?id=xxx  → hapus template
 
 import { createClient } from "@supabase/supabase-js";
+import { autentikasiSeller } from "@/lib/cod-server";
+
+const MAKS_PERTANYAAN = 200;
+const MAKS_JAWABAN = 1000;
+const TIPE_BOLEH = ["welcome", "faq"];
 
 const supa = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
@@ -16,20 +21,30 @@ export async function GET(req) {
   const storeId = searchParams.get("store_id") || searchParams.get("storeId");
   if (!storeId) return Response.json({ error: "storeId diperlukan" }, { status: 400 });
 
-  const { data, error } = await supa
-    .from("chat_templates")
-    .select("*")
-    .eq("store_id", storeId)
-    .eq("is_active", true)
-    .order("type")
-    .order("sort_order");
+  // Pembeli (publik) cuma lihat template AKTIF. Pemilik toko (bawa token login) lihat semuanya,
+  // supaya template yang dinonaktifkan tetap muncul di editor dan bisa diaktifkan lagi.
+  let semua = false;
+  if (req.headers.get("authorization")) {
+    const auth = await autentikasiSeller(supa, req);
+    semua = !auth.error && auth.store.id === storeId;
+  }
+
+  let query = supa.from("chat_templates").select("*").eq("store_id", storeId);
+  if (!semua) query = query.eq("is_active", true);
+  const { data, error } = await query.order("type").order("sort_order");
 
   if (error) return Response.json({ error: error.message }, { status: 500 });
 
-  // Kalau toko belum punya template sama sekali → kasih template default
+  // Kalau toko BELUM PERNAH punya template → buatkan template default.
+  // (Cek total baris, bukan cuma yang aktif: kalau seller sengaja menonaktifkan semua,
+  //  jangan dibuatkan default lagi.)
   if (!data || data.length === 0) {
-    const defaults = await insertDefaultTemplates(storeId);
-    return Response.json({ templates: defaults });
+    const { count } = await supa.from("chat_templates").select("id", { count: "exact", head: true }).eq("store_id", storeId);
+    if (!count) {
+      const defaults = await insertDefaultTemplates(storeId);
+      return Response.json({ templates: semua ? defaults : defaults.filter((t) => t.is_active !== false) });
+    }
+    return Response.json({ templates: [] });
   }
 
   return Response.json({ templates: data });
@@ -61,46 +76,59 @@ async function insertDefaultTemplates(storeId) {
 }
 
 export async function POST(req) {
-  const body = await req.json();
-  const { storeId: _si, store_id, type, question, answer, sort_order, is_active, sortOrder } = body;
-  const storeId = store_id || _si;
-  if (!storeId || !type || !answer) {
-    return Response.json({ error: "storeId, type, answer wajib" }, { status: 400 });
-  }
+  const auth = await autentikasiSeller(supa, req);
+  if (auth.error) return auth.error;
 
+  const body = await req.json().catch(() => ({}));
+  const type = TIPE_BOLEH.includes(body.type) ? body.type : null;
+  const answer = String(body.answer ?? "").trim().slice(0, MAKS_JAWABAN);
+  const question = body.question == null ? null : String(body.question).trim().slice(0, MAKS_PERTANYAAN);
+  if (!type || !answer) return Response.json({ error: "type dan answer wajib" }, { status: 400 });
+  if (type === "faq" && !question) return Response.json({ error: "Pertanyaan FAQ wajib diisi" }, { status: 400 });
+
+  // storeId SELALU dari sesi login, bukan dari body.
   const { data, error } = await supa.from("chat_templates").insert({
-    store_id:   storeId,
-    type, question, answer,
-    sort_order: sort_order ?? sortOrder ?? 0,
-    is_active: is_active ?? true,
+    store_id: auth.store.id, type, question, answer,
+    sort_order: Number.isInteger(body.sort_order ?? body.sortOrder) ? (body.sort_order ?? body.sortOrder) : 0,
+    is_active: body.is_active ?? true,
   }).select().single();
 
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  if (error) return Response.json({ error: "Gagal menyimpan template" }, { status: 500 });
   return Response.json({ success: true, template: data });
 }
 
 export async function PATCH(req) {
-  const body = await req.json();
-  const { id, ...fields } = body;
+  const auth = await autentikasiSeller(supa, req);
+  if (auth.error) return auth.error;
+
+  const { id, ...fields } = await req.json().catch(() => ({}));
   if (!id) return Response.json({ error: "id diperlukan" }, { status: 400 });
 
   const allowed = {};
-  if (fields.question  !== undefined) allowed.question   = fields.question;
-  if (fields.answer    !== undefined) allowed.answer     = fields.answer;
-  if (fields.is_active !== undefined) allowed.is_active  = fields.is_active;
-  if (fields.sortOrder !== undefined) allowed.sort_order = fields.sortOrder;
+  if (fields.question  !== undefined) allowed.question   = String(fields.question ?? "").trim().slice(0, MAKS_PERTANYAAN);
+  if (fields.answer    !== undefined) allowed.answer     = String(fields.answer ?? "").trim().slice(0, MAKS_JAWABAN);
+  if (fields.is_active !== undefined) allowed.is_active  = !!fields.is_active;
+  if (fields.sortOrder !== undefined && Number.isInteger(fields.sortOrder)) allowed.sort_order = fields.sortOrder;
+  if (allowed.answer === "") return Response.json({ error: "Jawaban tidak boleh kosong" }, { status: 400 });
 
-  const { data, error } = await supa.from("chat_templates").update(allowed).eq("id", id).select().single();
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  // .eq("store_id", ...) memastikan seller hanya bisa mengubah template tokonya sendiri.
+  const { data, error } = await supa.from("chat_templates").update(allowed)
+    .eq("id", id).eq("store_id", auth.store.id).select().maybeSingle();
+  if (error) return Response.json({ error: "Gagal memperbarui template" }, { status: 500 });
+  if (!data) return Response.json({ error: "Template tidak ditemukan" }, { status: 404 });
   return Response.json({ success: true, template: data });
 }
 
 export async function DELETE(req) {
-  const { searchParams } = new URL(req.url);
-  const id = searchParams.get("id");
+  const auth = await autentikasiSeller(supa, req);
+  if (auth.error) return auth.error;
+
+  const id = new URL(req.url).searchParams.get("id");
   if (!id) return Response.json({ error: "id diperlukan" }, { status: 400 });
 
-  const { error } = await supa.from("chat_templates").delete().eq("id", id);
-  if (error) return Response.json({ error: error.message }, { status: 500 });
+  const { data, error } = await supa.from("chat_templates").delete()
+    .eq("id", id).eq("store_id", auth.store.id).select("id");
+  if (error) return Response.json({ error: "Gagal menghapus template" }, { status: 500 });
+  if (!data || data.length === 0) return Response.json({ error: "Template tidak ditemukan" }, { status: 404 });
   return Response.json({ success: true });
 }

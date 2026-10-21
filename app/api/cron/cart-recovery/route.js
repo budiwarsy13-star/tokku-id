@@ -1,16 +1,18 @@
 import { createClient } from "@supabase/supabase-js";
 import { isPro } from "@/lib/plans";
+import { kirimPesanWA, SITE_URL, tokenWA } from "@/lib/wa-server";
 
-// CART RECOVERY via WhatsApp (Fonnte).
-// Cari order `pending` yang umurnya 30 menit - 100 menit dan belum pernah dikirimi
-// pesan recovery, lalu kirim 1 WA ke buyer. Batas atas 100 menit karena link bayar
-// Midtrans expired 2 jam (lihat /api/checkout) — lewat itu, ngajak bayar percuma.
+// REMINDER BAYAR via WhatsApp (Cart Recovery — fitur PRO, lihat lib/plans.js).
+// Cari order online `pending` yang umurnya 30-100 menit & belum pernah dikirimi reminder, lalu kirim
+// 1 WA ke buyer berisi link bayar Midtrans. Batas atas 100 menit karena transaksi Midtrans expired
+// 2 jam (lihat /api/checkout) — lewat itu, ngajak bayar percuma. Order COD (status `cod`) gak masuk.
 //
-// PENTING: endpoint ini harus dipanggil tiap ~10-15 menit. Vercel Hobby cuma
-// ngizinin cron 1x/hari, jadi pakai scheduler eksternal (mis. cron-job.org) yang
-// hit URL ini dengan header `Authorization: Bearer <CRON_SECRET>`.
+// PENTING — endpoint ini WAJIB dipanggil tiap ~10-15 menit dan TIDAK ada di vercel.json:
+// Vercel Hobby cuma mengizinkan cron 1x/hari (cron lebih sering bikin deploy GAGAL), dan paket Pro
+// baru boleh per-menit. Pakai scheduler eksternal (mis. cron-job.org, gratis) yang hit URL
+//   GET https://<domain>/api/cron/cart-recovery   dengan header   Authorization: Bearer <CRON_SECRET>
 //
-// Env: WA_API_KEY (token device Fonnte), CRON_SECRET (sudah ada).
+// Env: WA_API_KEY (token device Fonnte; FONNTE_TOKEN juga diterima), CRON_SECRET.
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -20,29 +22,11 @@ const MIN_UMUR_MENIT = 30;
 const MAX_UMUR_MENIT = 100;
 const MAX_PER_RUN = 30; // jaga biar gak kena timeout / rate limit Fonnte
 
-function normalisasiTelepon(nomor) {
-  let n = String(nomor || "").replace(/\D/g, "");
-  if (n.startsWith("0")) n = "62" + n.slice(1);
-  else if (n.startsWith("8")) n = "62" + n;
-  return n;
-}
-
-async function kirimWA(target, pesan) {
-  const res = await fetch("https://api.fonnte.com/send", {
-    method: "POST",
-    headers: { Authorization: process.env.WA_API_KEY },
-    body: new URLSearchParams({ target, message: pesan, countryCode: "62" }),
-  });
-  const data = await res.json().catch(() => ({}));
-  // Fonnte balas { status: true/false, reason?: "..." }
-  return { ok: res.ok && data.status === true, detail: data.reason || data.detail || "" };
-}
-
 export async function GET(request) {
-  if (request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
+  if (!process.env.CRON_SECRET || request.headers.get("authorization") !== `Bearer ${process.env.CRON_SECRET}`) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
-  if (!process.env.WA_API_KEY) {
+  if (!tokenWA()) {
     return Response.json({ error: "WA_API_KEY belum di-set di environment." }, { status: 500 });
   }
 
@@ -54,6 +38,7 @@ export async function GET(request) {
     .from("orders")
     .select("*, stores(name, slug, plan, plan_expires_at)")
     .eq("status", "pending")
+    .eq("payment_method", "online")
     .is("cart_recovery_sent_at", null)
     .gte("created_at", batasBawah)
     .lte("created_at", batasAtas)
@@ -67,29 +52,30 @@ export async function GET(request) {
   // 1 transaksi = beberapa baris orders -> 1 pesan per midtrans_order_id.
   const grup = {};
   for (const o of pendingOrders || []) {
-    if (!isPro(o.stores)) continue; // Cart Recovery = fitur Pro
-    const key = o.midtrans_order_id || o.id;
-    (grup[key] ||= []).push(o);
+    (grup[o.midtrans_order_id || o.id] ||= []).push(o);
   }
 
-  let terkirim = 0;
-  let gagal = 0;
+  let terkirim = 0, gagal = 0, dilewati = 0;
   const keys = Object.keys(grup).slice(0, MAX_PER_RUN);
 
   for (const key of keys) {
     const rows = grup[key];
     const first = rows[0];
-    const target = normalisasiTelepon(first.buyer_phone);
+
+    // Fitur berbayar: toko gratis dilewati (tanpa menandai, jadi kalau nanti upgrade masih dalam jendela waktu bisa terkirim).
+    if (!isPro(first.stores)) { dilewati++; continue; }
+
+    // KLAIM dulu: update bersyarat (cart_recovery_sent_at masih null) -> kalau 2 run cron tumpang tindih,
+    // cuma salah satu yang menang dan mengirim. Gagal kirim -> klaim dilepas supaya dicoba lagi.
+    const { data: klaim } = await supabaseAdmin.from("orders")
+      .update({ cart_recovery_sent_at: new Date().toISOString() })
+      .eq("midtrans_order_id", key).eq("status", "pending").is("cart_recovery_sent_at", null).select("id");
+    if (!klaim || klaim.length === 0) continue;
+
     const namaToko = first.stores?.name || "toko";
     const ringkasan = rows.length === 1 ? first.product_name : `${first.product_name} + ${rows.length - 1} produk lainnya`;
     const total = rows.reduce((s, r) => s + Number(r.total_price), 0);
-    const linkBayar = first.payment_url || `https://tokku-id.vercel.app/${first.stores?.slug || ""}`;
-
-    if (target.length < 10) { // nomor gak valid — tandai biar gak dicoba terus tiap run
-      await supabaseAdmin.from("orders").update({ cart_recovery_sent_at: new Date().toISOString() }).eq("midtrans_order_id", key);
-      gagal++;
-      continue;
-    }
+    const linkBayar = first.payment_url || `${SITE_URL}/${first.stores?.slug || ""}`;
 
     const pesan =
       `Halo ${first.buyer_name}! 👋\n\n` +
@@ -99,26 +85,18 @@ export async function GET(request) {
       `Selesaikan pembayaran di sini ya (berlaku sebentar lagi):\n${linkBayar}\n\n` +
       `Kalau ada kendala, balas pesan ini. Terima kasih! 🙏`;
 
-    const hasil = await kirimWA(target, pesan);
+    const hasil = await kirimPesanWA(first.buyer_phone, pesan);
     if (hasil.ok) {
-      // Tandai HANYA kalau sukses, supaya yang gagal kirim bisa dicoba lagi di run berikutnya
-      // (selama masih dalam jendela waktu).
-      await supabaseAdmin
-        .from("orders")
-        .update({ cart_recovery_sent_at: new Date().toISOString() })
-        .eq("midtrans_order_id", key)
-        .eq("status", "pending");
       terkirim++;
     } else {
       console.error(`Cart recovery gagal (${key}):`, hasil.detail);
+      // Nomor gak valid = percuma dicoba lagi -> biarkan tertandai. Selain itu, lepas klaim.
+      if (hasil.detail !== "Nomor WA tidak valid.") {
+        await supabaseAdmin.from("orders").update({ cart_recovery_sent_at: null }).eq("midtrans_order_id", key).eq("status", "pending");
+      }
       gagal++;
     }
   }
 
-  return Response.json({
-    message: "Selesai.",
-    kandidat: Object.keys(grup).length,
-    terkirim,
-    gagal,
-  });
+  return Response.json({ message: "Selesai.", kandidat: Object.keys(grup).length, terkirim, gagal, dilewatiPaketGratis: dilewati });
 }
