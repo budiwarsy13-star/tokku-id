@@ -9,7 +9,8 @@ import YangPerluDilakukan from "@/components/YangPerluDilakukan";
 import { Package, ShoppingBag, Wallet, TrendingUp } from "lucide-react";
 import DashboardLayout from "@/components/DashboardLayout";
 import UtmBreakdown from "@/components/UtmBreakdown";
-import TeaserRecovery from "@/components/TeaserRecovery";
+import { hitungSebagaiPenjualan } from "@/lib/order-status";
+import { slugTerlarang } from "@/lib/slug-terlarang";
 
 function persenPerubahan(sekarang, kemarin) {
   if (kemarin === 0) return sekarang > 0 ? 100 : 0;
@@ -67,12 +68,14 @@ export default function Dashboard() {
 
   async function checkSlug() {
     if (!slug) return;
+    if (slugTerlarang(slug)) { setSlugStatus("reserved"); return; }
     const { data } = await supabase.from("stores").select("id").eq("slug", slug).maybeSingle();
     setSlugStatus(data ? "taken" : "available");
   }
 
   async function handleBuatToko(e) {
     e.preventDefault();
+    if (slugTerlarang(slug)) { setSlugStatus("reserved"); return; }
     setSaving(true);
     const { data, error } = await supabase
       .from("stores")
@@ -121,9 +124,10 @@ export default function Dashboard() {
                     className="flex-1 px-2 py-2 text-sm focus:outline-none" placeholder="toko-budi" />
                 </div>
                 {slugStatus === "available" && <p className="text-xs text-[#3B6D11] mt-1">Link tersedia</p>}
+                {slugStatus === "reserved" && <p className="text-xs text-[#A32D2D] mt-1">Link ini dicadangkan sistem, coba yang lain</p>}
                 {slugStatus === "taken" && <p className="text-xs text-[#A32D2D] mt-1">Link sudah dipakai, coba yang lain</p>}
               </div>
-              <button type="submit" disabled={saving || slugStatus === "taken"}
+              <button type="submit" disabled={saving || slugStatus === "taken" || slugStatus === "reserved"}
                 className="w-full py-3 bg-[#D85A30] text-white rounded-lg font-medium hover:bg-[#B84A25] transition-colors disabled:opacity-50">
                 {saving ? "Membuat..." : "Buat toko"}
               </button>
@@ -156,8 +160,8 @@ function DashboardShell({ store }) {
         supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "view_toko").gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
         supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "klik_produk").gte("created_at", awalHariIni.toISOString()),
         supabase.from("store_events").select("id", { count: "exact", head: true }).eq("store_id", store.id).eq("type", "klik_produk").gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
-        supabase.from("orders").select("id, total_price, status", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalHariIni.toISOString()),
-        supabase.from("orders").select("id, total_price, status", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
+        supabase.from("orders").select("id, total_price, status, payment_method, cod_paid_at", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalHariIni.toISOString()),
+        supabase.from("orders").select("id, total_price, status, payment_method, cod_paid_at", { count: "exact" }).eq("store_id", store.id).gte("created_at", awalKemarin.toISOString()).lt("created_at", awalHariIni.toISOString()),
       ]);
 
       const pengunjung = pengunjungHariIni.count || 0;
@@ -166,8 +170,8 @@ function DashboardShell({ store }) {
       const klikY = klikKemarin.count || 0;
       const pesanan = orderHariIni.count || 0;
       const pesananY = orderKemarin.count || 0;
-      const penjualan = (orderHariIni.data || []).filter((o) => o.status !== "pending").reduce((s, o) => s + Number(o.total_price), 0);
-      const penjualanY = (orderKemarin.data || []).filter((o) => o.status !== "pending").reduce((s, o) => s + Number(o.total_price), 0);
+      const penjualan = (orderHariIni.data || []).filter(hitungSebagaiPenjualan).reduce((s, o) => s + Number(o.total_price), 0);
+      const penjualanY = (orderKemarin.data || []).filter(hitungSebagaiPenjualan).reduce((s, o) => s + Number(o.total_price), 0);
       const konversi = pengunjung > 0 ? (pesanan / pengunjung) * 100 : 0;
       const konversiY = pengunjungY > 0 ? (pesananY / pengunjungY) * 100 : 0;
 
@@ -192,11 +196,11 @@ function DashboardShell({ store }) {
         .order("created_at", { ascending: false });
 
       const totalOrder = orders?.length || 0;
-      const ordersPaid = orders?.filter((o) => o.status !== "pending") || [];
+      const ordersPaid = orders?.filter(hitungSebagaiPenjualan) || [];
       const totalPendapatan = ordersPaid.reduce((sum, o) => sum + Number(o.total_price), 0);
 
       const jualPerProduk = {};
-      orders?.forEach((o) => {
+      ordersPaid.forEach((o) => {
         jualPerProduk[o.product_name] = (jualPerProduk[o.product_name] || 0) + o.quantity;
       });
       const produkTerlaris = Object.entries(jualPerProduk)
@@ -240,6 +244,10 @@ function DashboardShell({ store }) {
   const statusBadge = {
     pending: { label: "Menunggu bayar", className: "bg-[#F1EFE8] text-[#5B6472]" },
     paid: { label: "Dibayar", className: "bg-[#EAF3DE] text-[#3B6D11]" },
+    cod: { label: "COD · Perlu dikirim", className: "bg-[#FCEFE3] text-[#B8600B]" },
+    shipped: { label: "Dikirim", className: "bg-[#E8F0FA] text-[#2563EB]" },
+    selesai: { label: "Selesai", className: "bg-[#F1EFE8] text-[#5B6472]" },
+    gagal: { label: "Dibatalkan", className: "bg-[#FBEAEA] text-[#A32D2D]" },
   };
 
   return (
@@ -292,8 +300,6 @@ function DashboardShell({ store }) {
               </div>
             )}
           </div>
-
-          <TeaserRecovery store={store} />
 
           {/* SUMBER PESANAN (UTM) */}
           <UtmBreakdown store={store} />

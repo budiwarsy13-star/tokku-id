@@ -45,7 +45,7 @@ export default function BuyerVerifikasi({ onBerhasil, aksen = "#D85A30" }) {
   }
 
   const tombol = "w-full py-3.5 text-white rounded-2xl font-bold text-sm flex items-center justify-center gap-2 transition-opacity disabled:opacity-50";
-  const input = "w-full px-4 py-3.5 border-2 border-[#E5E2D9] rounded-2xl text-sm focus:outline-none transition-all";
+  const input = "w-full px-4 py-3.5 border-2 border-[#E5E2D9] rounded-2xl text-sm text-[#1C1C1A] focus:outline-none transition-all";
 
   return tahap === "email" ? (
     <form onSubmit={mintaKode} className="space-y-4">

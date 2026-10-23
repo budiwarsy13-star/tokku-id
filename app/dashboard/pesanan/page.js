@@ -47,7 +47,7 @@ export default function PesananPage() {
   const [sendingChat,    setSendingChat]    = useState(false);
   const [unreadCounts,   setUnreadCounts]   = useState({});    // { orderId: jumlah unread }
   const chatEndRef       = useRef(null);
-  const chatOrderRef     = useRef(null);   // order yang drawer chatnya sedang terbuka (hindari stale closure)
+  const broadcastChRef   = useRef(null);   // Supabase Broadcast channel untuk chat aktif
 
   // ── Init ────────────────────────────────────────────────────
   useEffect(() => {
@@ -104,17 +104,16 @@ export default function PesananPage() {
         // Hanya proses kalau pesan ini milik toko kita dan dari buyer
         if (msg.store_id !== store.id || msg.sender_type !== "buyer") return;
 
-        // Drawer chat order ini sedang terbuka → tampilkan pesan langsung & tandai dibaca.
-        if (chatOrderRef.current?.id === msg.order_id) {
-          setChats((prev) => (prev.some((c) => c.id === msg.id) ? prev : [...prev, msg]));
-          supabase.from("chats").update({ is_read: true }).eq("id", msg.id);
-          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
-            new Notification(`Pesan dari ${msg.sender_name || "pembeli"}`, { body: msg.message?.slice(0, 80), icon: "/favicon.ico" });
-          }
-          return;
-        }
-        // Drawer TIDAK terbuka → naikkan badge unread
-        setUnreadCounts((prev) => ({ ...prev, [msg.order_id]: (prev[msg.order_id] || 0) + 1 }));
+        // Kalau drawer chat order ini sedang terbuka → append via broadcast (sudah dihandle)
+        // Kalau drawer TIDAK terbuka → naikkan badge unread
+        setUnreadCounts((prev) => {
+          // Cek apakah order ini sedang dibuka di drawer
+          // chatOrder diakses via ref agar tidak stale closure
+          return {
+            ...prev,
+            [msg.order_id]: (prev[msg.order_id] || 0) + 1,
+          };
+        });
       })
       .subscribe();
 
@@ -126,7 +125,7 @@ export default function PesananPage() {
     chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chats]);
 
-  // ── Buka chat untuk 1 order ────────
+  // ── Buka chat untuk 1 order + join Broadcast channel ────────
   async function bukaChat(order) {
     setChatOrder(order);
     setChatMsg("");
@@ -146,10 +145,43 @@ export default function PesananPage() {
     // Hapus badge unread di row ini
     setUnreadCounts((prev) => { const next = { ...prev }; delete next[order.id]; return next; });
 
-    chatOrderRef.current = order;
+    // ── Join Broadcast channel untuk order ini ──────────────
+    // Lepas channel order sebelumnya jika ada
+    if (broadcastChRef.current) {
+      await supabase.removeChannel(broadcastChRef.current);
+      broadcastChRef.current = null;
+    }
+
+    const ch = supabase
+      .channel(`chat-order-${order.id}`, {
+        config: { broadcast: { self: false } },
+      })
+      .on("broadcast", { event: "new_message" }, ({ payload }) => {
+        if (payload?.sender_type === "buyer") {
+          setChats((prev) => {
+            const sudahAda = prev.some((c) => c.id === payload.id);
+            if (sudahAda) return prev;
+            return [...prev, payload];
+          });
+          // Mark read karena seller sedang lihat
+          supabase.from("chats").update({ is_read: true }).eq("id", payload.id);
+          // Hapus badge unread
+          setUnreadCounts((prev) => { const next = {...prev}; delete next[order.id]; return next; });
+          // Notif browser kalau tab tidak fokus
+          if (document.hidden && "Notification" in window && Notification.permission === "granted") {
+            new Notification(`Pesan dari ${payload.sender_name || "pembeli"}`, {
+              body: payload.message?.slice(0, 80),
+              icon: "/favicon.ico",
+            });
+          }
+        }
+      })
+      .subscribe((status) => {
+        if (status === "SUBSCRIBED") broadcastChRef.current = ch;
+      });
   }
 
-  // ── Kirim balasan seller (buyer menerimanya lewat polling API) ──
+  // ── Kirim balasan seller + broadcast ke buyer ───────────────
   async function kirimChat(e) {
     e.preventDefault();
     if (!chatMsg.trim() || !chatOrder || !store) return;
@@ -170,6 +202,14 @@ export default function PesananPage() {
     if (newMsg) {
       // Append ke UI seller
       setChats((prev) => [...prev, newMsg]);
+      // Broadcast ke buyer via channel real-time
+      if (broadcastChRef.current) {
+        await broadcastChRef.current.send({
+          type:    "broadcast",
+          event:   "new_message",
+          payload: newMsg,
+        });
+      }
     }
     setSendingChat(false);
   }
@@ -189,8 +229,9 @@ export default function PesananPage() {
 
     const { error: errUpdate } = await supabase.from("orders").update(updateData).eq("midtrans_order_id", groupKey);
     if (errUpdate) {
-      // Database menolak (mis. loncat status yang gak diizinkan). Jangan pura-pura berhasil.
-      alert(errUpdate.code === "42501" ? "Perubahan status ini tidak diizinkan." : "Gagal memperbarui status. Coba lagi.");
+      // Database menolak perubahan yang tidak sah (mis. menandai "Dibayar" manual).
+      // Status pembayaran diubah otomatis oleh Midtrans, bukan dari dashboard.
+      alert("Status tidak bisa diubah ke sana. Status pembayaran berubah otomatis begitu pembeli bayar.");
       return;
     }
     setOrders(orders.map((o) => (o.midtrans_order_id === groupKey ? { ...o, ...updateData } : o)));
@@ -214,18 +255,6 @@ export default function PesananPage() {
         title: "Pesanan selesai",
         message: `Pesanan ${ringkasanProduk} sudah ditandai selesai.`,
       });
-    }
-
-    // WhatsApp ke pembeli (dikirim / selesai). Best-effort, 1x per status (dijaga di server).
-    if (newStatus === "shipped" || newStatus === "selesai") {
-      try {
-        const { data: { session } } = await supabase.auth.getSession();
-        await fetch("/api/wa/notify", {
-          method: "POST",
-          headers: { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` },
-          body: JSON.stringify({ type: "status_update", orderId: rowId }),
-        });
-      } catch {}
     }
   }
 
@@ -458,15 +487,14 @@ export default function PesananPage() {
                             if (e.target.value === "shipped") setOrderUntukResi(o);
                             else updateStatus(o.id, e.target.value);
                           }}
-                          disabled={["pending", "selesai", "gagal"].includes(o.status)}
+                          disabled={o.status === "gagal"}
                           className={`text-xs font-medium px-2 py-1 rounded-full border-0 disabled:opacity-70 ${STATUS_LABEL[o.status]?.color}`}
                         >
-                          {/* Cuma transisi yang diizinkan database: Dibayar→Dikirim→Selesai.
-                              "Dibayar" cuma dari Midtrans (atau konfirmasi manual pesanan Perlu Review). */}
+                          {/* Hanya opsi yang sah: "Dibayar" otomatis dari Midtrans, tidak bisa dipilih manual. */}
                           <option value={o.status}>{STATUS_LABEL[o.status]?.label || o.status}</option>
                           {o.status === "paid" && <option value="shipped">Dikirim</option>}
+                          {o.status === "perlu_review" && <option value="paid">Dibayar (sudah dicek)</option>}
                           {o.status === "shipped" && <option value="selesai">Selesai</option>}
-                          {o.status === "perlu_review" && <option value="paid">Konfirmasi sudah dibayar</option>}
                         </select>
                         )}
                         {o.waybill_number && (
@@ -512,8 +540,11 @@ export default function PesananPage() {
                 <p className="font-bold text-[#1C1C1A] truncate">{chatOrder.buyer_name}</p>
                 <p className="text-xs text-[#8B8D85] truncate">{chatOrder.product_name}</p>
               </div>
-              <button onClick={() => {
-                chatOrderRef.current = null;
+              <button onClick={async () => {
+                if (broadcastChRef.current) {
+                  await supabase.removeChannel(broadcastChRef.current);
+                  broadcastChRef.current = null;
+                }
                 setChatOrder(null);
               }}
                 className="p-2 rounded-xl hover:bg-[#F1EFE8] text-[#5B6472]">
