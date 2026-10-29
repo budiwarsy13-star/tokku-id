@@ -55,6 +55,11 @@ export async function GET(request) {
     (grup[o.midtrans_order_id || o.id] ||= []).push(o);
   }
 
+  // Toko yang ditangguhkan admin tidak boleh mengirim WA. Query terpisah & toleran: kalau kolom status
+  // belum ada (SQL admin belum dijalankan) hasilnya kosong, bukan error.
+  const { data: ditangguhkan } = await supabaseAdmin.from("stores").select("id").eq("status", "suspended");
+  const idDitangguhkan = new Set((ditangguhkan || []).map((t) => String(t.id)));
+
   let terkirim = 0, gagal = 0, dilewati = 0;
   const keys = Object.keys(grup).slice(0, MAX_PER_RUN);
 
@@ -64,6 +69,7 @@ export async function GET(request) {
 
     // Fitur berbayar: toko gratis dilewati (tanpa menandai, jadi kalau nanti upgrade masih dalam jendela waktu bisa terkirim).
     if (!isPro(first.stores)) { dilewati++; continue; }
+    if (idDitangguhkan.has(String(first.store_id))) { dilewati++; continue; } // toko ditangguhkan admin
 
     // KLAIM dulu: update bersyarat (cart_recovery_sent_at masih null) -> kalau 2 run cron tumpang tindih,
     // cuma salah satu yang menang dan mengirim. Gagal kirim -> klaim dilepas supaya dicoba lagi.

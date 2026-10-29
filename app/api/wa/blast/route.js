@@ -82,6 +82,8 @@ export async function POST(request) {
     if (body.action !== "send") return Response.json({ success: false, message: "Aksi gak dikenal." }, { status: 400 });
 
     if (!isPro(store)) return Response.json({ success: false, message: "WA Blast khusus Paket Pro. Upgrade di menu Langganan." }, { status: 403 });
+    const { data: stSusp } = await supabaseAdmin.from("stores").select("status").eq("id", store.id).maybeSingle();
+    if (stSusp?.status === "suspended") return Response.json({ success: false, message: "Toko sedang ditangguhkan." }, { status: 403 });
     if (!process.env.WA_API_KEY) return Response.json({ success: false, message: "Layanan WA belum dikonfigurasi." }, { status: 500 });
     if (!SEGMEN.includes(body.segment)) return Response.json({ success: false, message: "Segmen gak valid." }, { status: 400 });
     const template = String(body.message || "").trim();

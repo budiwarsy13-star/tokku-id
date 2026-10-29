@@ -69,6 +69,9 @@ export async function POST(request) {
 
     const { data: store } = await supabaseAdmin.from("stores").select("*").eq("id", storeId).maybeSingle();
     if (!store) return Response.json({ success: false, message: "Toko gak ditemukan." }, { status: 404 });
+    if (store.status === "suspended") {
+      return Response.json({ success: false, message: "Toko ini sedang tidak menerima pesanan." }, { status: 403 }); // ditangguhkan admin
+    }
     if (!store.origin_id) {
       return Response.json({ success: false, message: "Toko ini belum atur alamat asal pengiriman." }, { status: 400 });
     }

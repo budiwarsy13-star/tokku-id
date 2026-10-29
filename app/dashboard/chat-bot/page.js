@@ -28,14 +28,8 @@ export default function ChatBotPage() {
     init();
   }, []);
 
-  // Semua perubahan template WAJIB bawa token login seller (server memverifikasi kepemilikan toko).
-  async function authHeaders() {
-    const { data: { session } } = await supabase.auth.getSession();
-    return { "Content-Type": "application/json", Authorization: `Bearer ${session?.access_token || ""}` };
-  }
-
   async function fetchTemplates(storeId) {
-    const res = await fetch(`/api/portal/chat-templates?store_id=${storeId}`, { headers: await authHeaders() });
+    const res = await fetch(`/api/portal/chat-templates?store_id=${storeId}`);
     const data = await res.json();
     setTemplates(data.templates || []);
   }
@@ -47,7 +41,7 @@ export default function ChatBotPage() {
     setSaving(true);
     await fetch("/api/portal/chat-templates", {
       method: "PATCH",
-      headers: await authHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: t.id, ...editData }),
     });
     setEditingId(null);
@@ -59,7 +53,7 @@ export default function ChatBotPage() {
   async function toggleActive(t) {
     await fetch("/api/portal/chat-templates", {
       method: "PATCH",
-      headers: await authHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ id: t.id, is_active: !t.is_active }),
     });
     await fetchTemplates(store.id);
@@ -67,7 +61,7 @@ export default function ChatBotPage() {
 
   async function hapus(id) {
     if (!confirm("Hapus template FAQ ini?")) return;
-    await fetch(`/api/portal/chat-templates?id=${id}`, { method: "DELETE", headers: await authHeaders() });
+    await fetch(`/api/portal/chat-templates?id=${id}`, { method: "DELETE" });
     await fetchTemplates(store.id);
   }
 
@@ -76,8 +70,9 @@ export default function ChatBotPage() {
     setSaving(true);
     await fetch("/api/portal/chat-templates", {
       method: "POST",
-      headers: await authHeaders(),
+      headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        store_id: store.id,
         type: "faq",
         question: newFAQ.question,
         answer: newFAQ.answer,

@@ -97,7 +97,7 @@ export default function TokoPublik() {
     async function fetchStore() {
       const { data: storeData } = await supabase
         .from("stores").select("*").eq("slug", slug).maybeSingle();
-      if (!storeData) { setNotFound(true); setLoading(false); return; }
+      if (!storeData || storeData.status === "suspended") { setNotFound(true); setLoading(false); return; } // ditangguhkan = tampil seperti toko tidak aktif
       setStore(storeData);
       const { data: productsData } = await supabase
         .from("products").select("*").eq("store_id", storeData.id)
